@@ -1,0 +1,613 @@
+---
+title: "CRC-EAA-Classifier"
+output: html_notebook
+---
+
+## Preliminary Steps
+#### Loading libraries
+```{r}
+library(lme4)
+library(glmnet)
+library(performance)
+library(ggplot2)
+library(ggpubr)
+library(caret)
+library(pheatmap)
+library(PRROC)
+library(pROC)
+library(data.table)
+
+```
+Setting working directory
+```{r}
+setwd("~/your/working/directory/")
+```
+
+#### Loading the data
+Read the dataset in .csv format. It contains epigenetic ages and epigentic age differences.
+```{r}
+master_ds = as.data.frame(fread("~/your/data/path/master_df_classifier.csv")) # Change to your path
+master_ds
+```
+
+#### Restricting the data
+For the classifier development we included only samples with normal and healthy tissue status (samples labelled as "tumour" and "adenoma" were excluded). We also include only those datasets, processed from raw .idat files, i.e. we excluded datasets, for which pre-processing was not possible due to the absence of the raw data files or missing essential technical information about arrays and position of the samples on them.
+The ten datasets, used for the classifier are: E-MTAB-3027, E_MTAB_7036, GSE101764, GSE132804_450k, GSE132804_epic, GSE142257, GSE149282, GSE151732, GSE166212, GSE199057.
+```{r}
+ds = master_ds[master_ds$tissue %in% c("healthy", "normal"),] 
+all_datasets = c("E-MTAB-3027","E_MTAB_7036","GSE101764","GSE132804_450k","GSE132804_epic","GSE142257","GSE149282","GSE151732","GSE166212","GSE199057")
+ds = ds[ds$datasetID %in% all_datasets,]
+head(ds)
+```
+
+#### Removing outliers
+We performed the analysis of outliers using the differences between epigenetic and chronological age values, which we denote as EAAd. This metric was only calculated for the first and second generation clocks, and not for the mitotic clocks.
+A sample was labelled as an outlier if its EAAd value was outside of the three standard deviations window from the mean EAAd across the dataset.
+```{r}
+clocks = c("Horvath","Hannum","Pheno","SkinBlood","PedBE","Wu","Zhang_BLUP","Zhang_EN")
+age_diff = c("HorvathAAd","HannumAAd","PhenoAAd","SkinBloodAAd","PedBEAAd","WuAAd","Zhang_BLUPAAd","Zhang_ENAAd")
+outliers_ds = ds[,c("sampleID","patientID",age_diff)]
+clock_means = colMeans(ds[age_diff])
+clock_sds = apply(ds[,age_diff],2,sd)
+n_range_min = clock_means-3*clock_sds
+n_range_max = clock_means+3*clock_sds
+
+print("Range of the clocks without outliers")
+cbind(n_range_min, n_range_max) # display the range of the epigenetic ages afetr removing the ouliers
+
+```
+
+Identify the number of outlying samples for each clock
+```{r}
+for(a in age_diff){outliers_ds[a] = (outliers_ds[a]<n_range_max[a] & outliers_ds[a]>n_range_min[a])}
+outliers_count = rowSums(!(outliers_ds[,-c(1,2)]))
+outliers_count_clock = colSums(!(outliers_ds[,-c(1,2)]))
+print("Number of outliers by number of clocks")
+table(outliers_count)
+print("Number of outliers by clock")
+outliers_count_clock
+```
+
+We removed all the samples, which are outliers in at least one clock. In total, 39 samples were removed as outliers.
+```{r}
+outlier_samples = outliers_ds$sampleID[outliers_count>=1]
+print("Outliers sample IDs")
+outlier_samples
+ds_filtered = ds[-which(ds$sampleID %in% outlier_samples),]
+```
+
+
+## Classifier
+### Preparing the data: Defining train and test datasets
+We build classifier using 990 samples from ten studies, out of them 328 are normal colon mucosa samples from CRC patients, and 662 colon mucosa samples came from the non-cancerous individuals. Table with distribution of of samples across the studies are given in Table below.
+```{r}
+table(ds_filtered$datasetID,ds_filtered$tissue)
+print(paste("In total we have ",sum(ds_filtered$tissue=="normal")," normal samples and ",sum(ds_filtered$tissue=="healthy"), " healthy samples.",sep="" ))
+```
+
+The dataset was split into train and test set. The train set consists of datasets from six studies (341/215 healthy/normal samples), and test set includes four datasets (321/113 healthy/normal samples). The choice of not using samples from one study in train and test subsets was made to avoid potential data leak.
+```{r}
+datasets_test = c("E_MTAB_7036","E-MTAB-3027","GSE199057","GSE151732") # testing data
+datasets_train = c("GSE101764","GSE132804_epic","GSE149282","GSE132804_450k","GSE142257","GSE166212") # training data
+
+data_test = ds_filtered[which(ds_filtered$datasetID %in% datasets_test),]
+data_train = ds_filtered[which(ds_filtered$datasetID %in% datasets_train),]
+
+print("####################### TRAIN DATA ######################")
+print("Train datasets:")
+datasets_train
+table(data_train$datasetID, data_train$tissue)
+table(data_train$tissue)
+
+print("####################### TEST DATA ######################")
+print("Test datasets:")
+datasets_test
+table(data_test$datasetID, data_test$tissue)
+table(data_test$tissue)
+
+data_train$sex[data_train$sex=="M"]=1
+data_train$sex[data_train$sex=="F"]=0
+data_train$sex = as.numeric(data_train$sex)
+
+data_test$sex[data_test$sex=="M"]=1
+data_test$sex[data_test$sex=="F"]=0
+data_test$sex = as.numeric(data_test$sex)
+```
+
+### Grid Search
+#### Data preparation
+We manually created folds for cross-validation. It was done by choosing two datasets for each test, and 4 for train. We ensured that at every fold test data contain both healthy and normal samples. Due to only three (out of six) datasets containing healthy samples, we included all possibles pairs of them with each other and normal-only datasets, which makes 12 folds (5+4+3).
+```{r}
+folds_test = list(c("GSE132804_450k","GSE132804_epic"),c("GSE132804_450k","GSE142257"),c("GSE132804_450k","GSE149282"),c("GSE132804_450k","GSE166212"),c("GSE132804_450k","GSE101764"),c("GSE132804_epic","GSE142257"),c("GSE132804_epic","GSE149282"),c("GSE132804_epic","GSE166212"),c("GSE132804_epic","GSE101764"),c("GSE101764","GSE142257"),c("GSE142257","GSE149282"),c("GSE142257","GSE166212"))
+
+folds_train = list(setdiff(datasets_train,c("GSE132804_450k","GSE132804_epic")),setdiff(datasets_train,c("GSE132804_450k","GSE142257")),setdiff(datasets_train,c("GSE132804_450k","GSE149282")),setdiff(datasets_train,c("GSE132804_450k","GSE166212")),setdiff(datasets_train,c("GSE132804_450k","GSE101764")),setdiff(datasets_train,c("GSE132804_epic","GSE142257")),setdiff(datasets_train,c("GSE132804_epic","GSE149282")),setdiff(datasets_train,c("GSE132804_epic","GSE166212")),setdiff(datasets_train,c("GSE132804_epic","GSE101764")),setdiff(datasets_train,c("GSE101764","GSE142257")),setdiff(datasets_train,c("GSE142257","GSE149282")),setdiff(datasets_train,c("GSE142257","GSE166212")))
+
+```
+
+#### Cross-validation
+We perform cross-validation to identify optimal values of the elastic net parameters alpha and lambda.
+At each step of cross-validation (i.e. for each value of alpha and lambda at every fold) we calculate the residuals and scale the data using standard normal distribution, and fit the elastic net. We calculate ROC-AUC, and PR-AUC metrics.
+```{r}
+# decide what will go into the resulting table
+res = c("fold","alpha","lambda","n_train","n_train_normal","n_train_healthy","n_test", "n_test_normal","n_test_healthy","roc_auc","pr_auc","N_predictors")
+
+alpha_set = seq(0,1,0.05) # Define grid for alpha 
+lambda_set = seq(0,1,0.01) # Define grid for lambda
+i_set = 1:length(folds_test) # grid for CV folds
+
+for(i in i_set){
+  d_train = as.data.frame(data_train[data_train$datasetID %in% folds_train[[i]],]) #data for train at a fold
+  d_test = as.data.frame(data_train[data_train$datasetID %in% folds_test[[i]],]) #data for test at a fold
+  
+  ################## Calculating residuals ####################
+d_train_res = d_train[,c("Horvath","Hannum","Pheno","SkinBlood","PedBE","Wu","Zhang_BLUP","Zhang_EN","EpiTOC","HypoScore","MiAge","sex")]
+d_test_res = d_test[,c("Horvath","Hannum","Pheno","SkinBlood","PedBE","Wu","Zhang_BLUP","Zhang_EN","EpiTOC","HypoScore","MiAge","sex")]
+
+lmHorvath = lm(Horvath ~ age,d_train[d_train$tissue=="healthy",])
+d_train_res$Horvath = d_train$Horvath-predict.lm(lmHorvath,d_train)
+d_test_res$Horvath = d_test$Horvath-predict.lm(lmHorvath,d_test)
+
+lmHannum = lm(Hannum ~ age,d_train[d_train$tissue=="healthy",])
+d_train_res$Hannum = d_train$Hannum-predict.lm(lmHannum,d_train)
+d_test_res$Hannum = d_test$Hannum-predict.lm(lmHannum,d_test)
+
+lmPheno = lm(Pheno ~ age,d_train[d_train$tissue=="healthy",])
+d_train_res$Pheno = d_train$Pheno-predict.lm(lmPheno,d_train)
+d_test_res$Pheno = d_test$Pheno-predict.lm(lmPheno,d_test)
+
+lmSkinBlood = lm(SkinBlood ~ age,d_train[d_train$tissue=="healthy",])
+d_train_res$SkinBlood = d_train$SkinBlood-predict.lm(lmSkinBlood,d_train)
+d_test_res$SkinBlood = d_test$SkinBlood-predict.lm(lmSkinBlood,d_test)
+
+lmPedBE = lm(PedBE ~ age,d_train[d_train$tissue=="healthy",])
+d_train_res$PedBE = d_train$PedBE-predict.lm(lmPedBE,d_train)
+d_test_res$PedBE = d_test$PedBE-predict.lm(lmPedBE,d_test)
+
+lmWu = lm(Wu ~ age,d_train[d_train$tissue=="healthy",])
+d_train_res$Wu = d_train$Wu-predict.lm(lmWu,d_train)
+d_test_res$Wu = d_test$Wu-predict.lm(lmWu,d_test)
+
+lmZhang_BLUP = lm(Zhang_BLUP ~ age,d_train[d_train$tissue=="healthy",])
+d_train_res$Zhang_BLUP = d_train$Zhang_BLUP-predict.lm(lmZhang_BLUP,d_train)
+d_test_res$Zhang_BLUP = d_test$Zhang_BLUP-predict.lm(lmZhang_BLUP,d_test)
+
+lmZhang_EN = lm(Zhang_EN ~ age,d_train[d_train$tissue=="healthy",])
+d_train_res$Zhang_EN = d_train$Zhang_EN-predict.lm(lmZhang_EN,d_train)
+d_test_res$Zhang_EN = d_test$Zhang_EN-predict.lm(lmZhang_EN,d_test)
+
+lmEpiTOC = lm(EpiTOC ~ age,d_train[d_train$tissue=="healthy",])
+d_train_res$EpiTOC = d_train$EpiTOC-predict.lm(lmEpiTOC,d_train)
+d_test_res$EpiTOC = d_test$EpiTOC-predict.lm(lmEpiTOC,d_test)
+
+lmHypoScore = lm(HypoScore ~ age,d_train[d_train$tissue=="healthy",])
+d_train_res$HypoScore = d_train$HypoScore-predict.lm(lmHypoScore,d_train)
+d_test_res$HypoScore = d_test$HypoScore-predict.lm(lmHypoScore,d_test)
+
+lmMiAge = lm(MiAge ~ age,d_train[d_train$tissue=="healthy",])
+d_train_res$MiAge = d_train$MiAge-predict.lm(lmMiAge,d_train)
+d_test_res$MiAge = d_test$MiAge-predict.lm(lmMiAge,d_test)
+
+
+###################################################################################  
+
+################## Scaling ########################################################
+
+scale_Horvath = c(mean(d_train_res$Horvath),sd(d_train_res$Horvath))
+d_train_res$Horvath = as.numeric(scale(d_train_res$Horvath))
+scale_Hannum = c(mean(d_train_res$Hannum),sd(d_train_res$Hannum))
+d_train_res$Hannum = as.numeric(scale(d_train_res$Hannum))
+scale_Pheno = c(mean(d_train_res$Pheno),sd(d_train_res$Pheno))
+d_train_res$Pheno = as.numeric(scale(d_train_res$Pheno))
+scale_SkinBlood = c(mean(d_train_res$SkinBlood),sd(d_train_res$SkinBlood))
+d_train_res$SkinBlood = as.numeric(scale(d_train_res$SkinBlood))
+scale_PedBE = c(mean(d_train_res$PedBE),sd(d_train_res$PedBE))
+d_train_res$PedBE = as.numeric(scale(d_train_res$PedBE))
+scale_Wu = c(mean(d_train_res$Wu),sd(d_train_res$Wu))
+d_train_res$Wu = as.numeric(scale(d_train_res$Wu))
+scale_Zhang_BLUP = c(mean(d_train_res$Zhang_BLUP),sd(d_train_res$Zhang_BLUP))
+d_train_res$Zhang_BLUP = as.numeric(scale(d_train_res$Zhang_BLUP))
+scale_Zhang_EN = c(mean(d_train_res$Zhang_EN),sd(d_train_res$Zhang_EN))
+d_train_res$Zhang_EN = as.numeric(scale(d_train_res$Zhang_EN))
+scale_EpiTOC = c(mean(d_train_res$EpiTOC),sd(d_train_res$EpiTOC))
+d_train_res$EpiTOC = as.numeric(scale(d_train_res$EpiTOC))
+scale_HypoScore = c(mean(d_train_res$HypoScore),sd(d_train_res$HypoScore))
+d_train_res$HypoScore = as.numeric(scale(d_train_res$HypoScore))
+scale_MiAge = c(mean(d_train_res$MiAge),sd(d_train_res$MiAge))
+d_train_res$MiAge = as.numeric(scale(d_train_res$MiAge))
+
+d_train_res = as.data.frame(d_train_res)
+
+
+d_test_res$Horvath = (d_test_res$Horvath - scale_Horvath[1])/scale_Horvath[2]
+d_test_res$Hannum = (d_test_res$Hannum - scale_Hannum[1])/scale_Hannum[2]
+d_test_res$Pheno = (d_test_res$Pheno - scale_Pheno[1])/scale_Pheno[2]
+d_test_res$SkinBlood = (d_test_res$SkinBlood - scale_SkinBlood[1])/scale_SkinBlood[2]
+d_test_res$PedBE = (d_test_res$PedBE - scale_PedBE[1])/scale_PedBE[2]
+d_test_res$Wu = (d_test_res$Wu - scale_Wu[1])/scale_Wu[2]
+d_test_res$Zhang_BLUP = (d_test_res$Zhang_BLUP - scale_Zhang_BLUP[1])/scale_Zhang_BLUP[2]
+d_test_res$Zhang_EN = (d_test_res$Zhang_EN - scale_Zhang_EN[1])/scale_Zhang_EN[2]
+d_test_res$EpiTOC = (d_test_res$EpiTOC - scale_EpiTOC[1])/scale_EpiTOC[2]
+d_test_res$HypoScore = (d_test_res$HypoScore - scale_HypoScore[1])/scale_HypoScore[2]
+d_test_res$MiAge = (d_test_res$MiAge - scale_MiAge[1])/scale_MiAge[2]
+
+
+d_test_res = as.matrix(d_test_res)
+
+########################################################################################
+  
+  
+  d_train_class = d_train$tissue # train classes as 1 for case (normal) and o for control (healthy)
+    d_train_class[d_train_class=="normal"] = 1
+    d_train_class[d_train_class=="healthy"] = 0
+  d_test_class = d_test$tissue # test classes as 1 for case (normal) and o for control (healthy)
+    d_test_class[d_test_class=="normal"] = 1
+    d_test_class[d_test_class=="healthy"] = 0
+          
+    for(alpha in alpha_set){
+     for(lambda in lambda_set){
+          
+          #fit elastic net with alpha and lambda on train data
+          tm = glmnet(
+            x=d_train_res,
+            y=d_train_class,lambda = lambda,alpha = alpha, family = "binomial")
+          
+          # predict the results on test
+          tmp = predict(tm, as.matrix(d_test_res),type="response",newoffset = d_test_class)
+          
+          # calculate ROC-AUC and PR-AUC on resulting test data
+          roc_res = roc.curve(scores.class0 = tmp[d_test_class=="1",1],scores.class1 = tmp[d_test_class=="0",1])
+          pr_res = pr.curve(scores.class0 = tmp[d_test_class=="1"],scores.class1 = tmp[d_test_class=="0"])
+          
+          # write results to the table
+          res = rbind(res,c(i,alpha,lambda,nrow(d_train_res),sum(d_train_class=="1"),sum(d_train_class=="0"),nrow(d_test_res),sum(d_test_class=="1"),sum(d_test_class=="0"),roc_res$auc,pr_res$auc.integral,length(tm$beta@x)))
+     }}}
+
+# Make resulting table nicer
+colnames(res) = res[1,]
+res = as.data.frame(res[-1,])
+res = apply(res,2,as.numeric)
+res = as.data.frame(res)
+
+head(res)
+```
+
+We calculate means and SDs for ROC-AUC and PR-AUC for each pair of parameters alpha and lambda from cross-validation results.
+```{r}
+# Means
+res_mean = c("alpha","lambda","roc","pr","n_predictors")
+for(i in unique(res$alpha))
+{
+  for(j in unique(res$lambda))
+{
+    roc_auc_mean = mean(as.numeric(res$roc_auc[res$alpha==i & res$lambda==j]))
+    pr_auc_mean = mean(as.numeric(res$pr_auc[res$alpha==i & res$lambda==j]))
+    n_predictors_mean = mean(as.numeric(res$N_predictors[res$alpha==i & res$lambda==j]))
+  res_mean = rbind(res_mean,c(i,j,roc_auc_mean,pr_auc_mean,n_predictors_mean))
+  }}
+colnames(res_mean) = res_mean[1,]
+res_mean = as.data.frame(res_mean[-1,])
+```
+
+```{r}
+# SDs
+res_sd = c("alpha","lambda","roc","pr","n_predictors")
+for(i in unique(res$alpha))
+{
+  for(j in unique(res$lambda))
+{
+    roc_auc_sd = sd(as.numeric(res$roc_auc[res$alpha==i & res$lambda==j]))
+    pr_auc_sd = sd(as.numeric(res$pr_auc[res$alpha==i & res$lambda==j]))
+    n_predictors_sd = sd(as.numeric(res$N_predictors[res$alpha==i & res$lambda==j]))
+  res_sd = rbind(res_sd,c(i,j,roc_auc_sd,pr_auc_sd,n_predictors_sd))
+  }}
+colnames(res_sd) = res_sd[1,]
+res_sd = as.data.frame(res_sd[-1,])
+```
+
+Heatmaps for ROC-AUC and PR-AUC means and SDs (written to the files)
+```{r}
+# ROC-AUC mean
+ds_roc_mean = reshape2::dcast(res_mean[,1:3],alpha~lambda)
+ds_roc_mean[,2:ncol(ds_roc_mean)] = apply(ds_roc_mean[,2:ncol(ds_roc_mean)],MARGIN = 2,as.numeric)
+rownames(ds_roc_mean)  = ds_roc_mean[,1]
+ds_roc_mean = ds_roc_mean[,-1]
+png(filename = "~/your/folder/cv_roc_mean_heatmap.png",width = 12, height = 10, units = "in",res = 300)
+pheatmap(ds_roc_mean, cluster_cols = FALSE, cluster_rows = FALSE, fontsize_col = 6, angle_col = "315", main = "ROC-AUC mean")
+dev.off()
+
+# PR-AUC mean
+ds_pr_mean = reshape2::dcast(res_mean[,c(1,2,4)],alpha~lambda)
+ds_pr_mean[,2:ncol(ds_pr_mean)] = apply(ds_pr_mean[,2:ncol(ds_pr_mean)],MARGIN = 2,as.numeric)
+rownames(ds_pr_mean)  = ds_pr_mean[,1]
+ds_pr_mean = ds_pr_mean[,-1]
+png(filename = "~/your/folder/cv_pr_mean_heatmap.png",width = 12, height = 10, units = "in",res = 300)
+pheatmap(ds_pr_mean, cluster_cols = FALSE, cluster_rows = FALSE, fontsize_col = 6, angle_col = "315", main = "PR-AUC mean")
+dev.off()
+
+# n_predictors mean
+ds_n_predictors_mean = reshape2::dcast(res_mean[,c(1,2,5)],alpha~lambda)
+ds_n_predictors_mean[,2:ncol(ds_n_predictors_mean)] = apply(ds_n_predictors_mean[,2:ncol(ds_n_predictors_mean)],MARGIN = 2,as.numeric)
+rownames(ds_n_predictors_mean)  = ds_n_predictors_mean[,1]
+ds_n_predictors_mean = ds_n_predictors_mean[,-1]
+png(filename = "~/your/folder/cv_n_predictors_mean_heatmap.png",width = 12, height = 10, units = "in",res = 300)
+pheatmap(ds_n_predictors_mean, cluster_cols = FALSE, cluster_rows = FALSE, fontsize_col = 6, angle_col = "315", main = "N predictors mean")
+dev.off()
+
+# ROC-AUC SD
+ds_roc_sd = reshape2::dcast(res_sd[,1:3],alpha~lambda)
+ds_roc_sd[,2:ncol(ds_roc_sd)] = apply(ds_roc_sd[,2:ncol(ds_roc_sd)],MARGIN = 2,as.numeric)
+rownames(ds_roc_sd)  = ds_roc_sd[,1]
+ds_roc_sd = ds_roc_sd[,-1]
+png(filename = "~/your/folder/cv_roc_sd_heatmap.png",width = 12, height = 10, units = "in",res = 300)
+pheatmap(ds_roc_sd, cluster_cols = FALSE, cluster_rows = FALSE, fontsize_col = 6, angle_col = "315", main = "ROC-AUC SD")
+dev.off()
+
+# PR-AUC SD
+ds_pr_sd = reshape2::dcast(res_sd[,c(1,2,4)],alpha~lambda)
+ds_pr_sd[,2:ncol(ds_pr_sd)] = apply(ds_pr_sd[,2:ncol(ds_pr_sd)],MARGIN = 2,as.numeric)
+rownames(ds_pr_sd)  = ds_pr_sd[,1]
+ds_pr_sd = ds_pr_sd[,-1]
+png(filename = "~/your/folder/cv_pr_sd_heatmap.png",width = 12, height = 10, units = "in",res = 300)
+pheatmap(ds_pr_sd, cluster_cols = FALSE, cluster_rows = FALSE, fontsize_col = 6, angle_col = "315", main = "PR-AUC SD")
+dev.off()
+
+# n_predictors sd
+ds_n_predictors_sd = reshape2::dcast(res_sd[,c(1,2,5)],alpha~lambda)
+ds_n_predictors_sd[,2:ncol(ds_n_predictors_sd)] = apply(ds_n_predictors_sd[,2:ncol(ds_n_predictors_sd)],MARGIN = 2,as.numeric)
+rownames(ds_n_predictors_sd)  = ds_n_predictors_sd[,1]
+ds_n_predictors_sd = ds_n_predictors_sd[,-1]
+png(filename = "~/your/folder/cv_n_predictors_sd_heatmap.png",width = 12, height = 10, units = "in",res = 300)
+pheatmap(ds_n_predictors_sd, cluster_cols = FALSE, cluster_rows = FALSE, fontsize_col = 6, angle_col = "315", main = "N predictors SD")
+dev.off()
+```
+
+### Fitting the model
+#### Preparing the data - calculating re residuals and scaling them
+```{r}
+d_train = data_train
+d_test = data_test
+
+d_train_res = d_train[,c("Horvath","Hannum","Pheno","SkinBlood","PedBE","Wu","Zhang_BLUP","Zhang_EN","EpiTOC","HypoScore","MiAge","sex")]
+d_test_res = d_test[,c("Horvath","Hannum","Pheno","SkinBlood","PedBE","Wu","Zhang_BLUP","Zhang_EN","EpiTOC","HypoScore","MiAge","sex")]
+
+lmHorvath = lm(Horvath ~ age,d_train[d_train$tissue=="healthy",])
+d_train_res$Horvath = d_train$Horvath-predict.lm(lmHorvath,d_train)
+d_test_res$Horvath = d_test$Horvath-predict.lm(lmHorvath,d_test)
+
+lmHannum = lm(Hannum ~ age,d_train[d_train$tissue=="healthy",])
+d_train_res$Hannum = d_train$Hannum-predict.lm(lmHannum,d_train)
+d_test_res$Hannum = d_test$Hannum-predict.lm(lmHannum,d_test)
+
+lmPheno = lm(Pheno ~ age,d_train[d_train$tissue=="healthy",])
+d_train_res$Pheno = d_train$Pheno-predict.lm(lmPheno,d_train)
+d_test_res$Pheno = d_test$Pheno-predict.lm(lmPheno,d_test)
+
+lmSkinBlood = lm(SkinBlood ~ age,d_train[d_train$tissue=="healthy",])
+d_train_res$SkinBlood = d_train$SkinBlood-predict.lm(lmSkinBlood,d_train)
+d_test_res$SkinBlood = d_test$SkinBlood-predict.lm(lmSkinBlood,d_test)
+
+lmPedBE = lm(PedBE ~ age,d_train[d_train$tissue=="healthy",])
+d_train_res$PedBE = d_train$PedBE-predict.lm(lmPedBE,d_train)
+d_test_res$PedBE = d_test$PedBE-predict.lm(lmPedBE,d_test)
+
+lmWu = lm(Wu ~ age,d_train[d_train$tissue=="healthy",])
+d_train_res$Wu = d_train$Wu-predict.lm(lmWu,d_train)
+d_test_res$Wu = d_test$Wu-predict.lm(lmWu,d_test)
+
+lmZhang_BLUP = lm(Zhang_BLUP ~ age,d_train[d_train$tissue=="healthy",])
+d_train_res$Zhang_BLUP = d_train$Zhang_BLUP-predict.lm(lmZhang_BLUP,d_train)
+d_test_res$Zhang_BLUP = d_test$Zhang_BLUP-predict.lm(lmZhang_BLUP,d_test)
+
+lmZhang_EN = lm(Zhang_EN ~ age,d_train[d_train$tissue=="healthy",])
+d_train_res$Zhang_EN = d_train$Zhang_EN-predict.lm(lmZhang_EN,d_train)
+d_test_res$Zhang_EN = d_test$Zhang_EN-predict.lm(lmZhang_EN,d_test)
+
+lmEpiTOC = lm(EpiTOC ~ age,d_train[d_train$tissue=="healthy",])
+d_train_res$EpiTOC = d_train$EpiTOC-predict.lm(lmEpiTOC,d_train)
+d_test_res$EpiTOC = d_test$EpiTOC-predict.lm(lmEpiTOC,d_test)
+
+lmHypoScore = lm(HypoScore ~ age,d_train[d_train$tissue=="healthy",])
+d_train_res$HypoScore = d_train$HypoScore-predict.lm(lmHypoScore,d_train)
+d_test_res$HypoScore = d_test$HypoScore-predict.lm(lmHypoScore,d_test)
+
+lmMiAge = lm(MiAge ~ age,d_train[d_train$tissue=="healthy",])
+d_train_res$MiAge = d_train$MiAge-predict.lm(lmMiAge,d_train)
+d_test_res$MiAge = d_test$MiAge-predict.lm(lmMiAge,d_test)
+
+###################################################################################  
+
+################## Scaling ########################################################
+
+scale_Horvath = c(mean(d_train_res$Horvath),sd(d_train_res$Horvath))
+d_train_res$Horvath = as.numeric(scale(d_train_res$Horvath))
+scale_Hannum = c(mean(d_train_res$Hannum),sd(d_train_res$Hannum))
+d_train_res$Hannum = as.numeric(scale(d_train_res$Hannum))
+scale_Pheno = c(mean(d_train_res$Pheno),sd(d_train_res$Pheno))
+d_train_res$Pheno = as.numeric(scale(d_train_res$Pheno))
+scale_SkinBlood = c(mean(d_train_res$SkinBlood),sd(d_train_res$SkinBlood))
+d_train_res$SkinBlood = as.numeric(scale(d_train_res$SkinBlood))
+scale_PedBE = c(mean(d_train_res$PedBE),sd(d_train_res$PedBE))
+d_train_res$PedBE = as.numeric(scale(d_train_res$PedBE))
+scale_Wu = c(mean(d_train_res$Wu),sd(d_train_res$Wu))
+d_train_res$Wu = as.numeric(scale(d_train_res$Wu))
+scale_Zhang_BLUP = c(mean(d_train_res$Zhang_BLUP),sd(d_train_res$Zhang_BLUP))
+d_train_res$Zhang_BLUP = as.numeric(scale(d_train_res$Zhang_BLUP))
+scale_Zhang_EN = c(mean(d_train_res$Zhang_EN),sd(d_train_res$Zhang_EN))
+d_train_res$Zhang_EN = as.numeric(scale(d_train_res$Zhang_EN))
+scale_EpiTOC = c(mean(d_train_res$EpiTOC),sd(d_train_res$EpiTOC))
+d_train_res$EpiTOC = as.numeric(scale(d_train_res$EpiTOC))
+scale_HypoScore = c(mean(d_train_res$HypoScore),sd(d_train_res$HypoScore))
+d_train_res$HypoScore = as.numeric(scale(d_train_res$HypoScore))
+scale_MiAge = c(mean(d_train_res$MiAge),sd(d_train_res$MiAge))
+d_train_res$MiAge = as.numeric(scale(d_train_res$MiAge))
+
+d_train_res = as.data.frame(d_train_res)
+
+
+d_test_res$Horvath = (d_test_res$Horvath - scale_Horvath[1])/scale_Horvath[2]
+d_test_res$Hannum = (d_test_res$Hannum - scale_Hannum[1])/scale_Hannum[2]
+d_test_res$Pheno = (d_test_res$Pheno - scale_Pheno[1])/scale_Pheno[2]
+d_test_res$SkinBlood = (d_test_res$SkinBlood - scale_SkinBlood[1])/scale_SkinBlood[2]
+d_test_res$PedBE = (d_test_res$PedBE - scale_PedBE[1])/scale_PedBE[2]
+d_test_res$Wu = (d_test_res$Wu - scale_Wu[1])/scale_Wu[2]
+d_test_res$Zhang_BLUP = (d_test_res$Zhang_BLUP - scale_Zhang_BLUP[1])/scale_Zhang_BLUP[2]
+d_test_res$Zhang_EN = (d_test_res$Zhang_EN - scale_Zhang_EN[1])/scale_Zhang_EN[2]
+d_test_res$EpiTOC = (d_test_res$EpiTOC - scale_EpiTOC[1])/scale_EpiTOC[2]
+d_test_res$HypoScore = (d_test_res$HypoScore - scale_HypoScore[1])/scale_HypoScore[2]
+d_test_res$MiAge = (d_test_res$MiAge - scale_MiAge[1])/scale_MiAge[2]
+
+d_test_res = as.matrix(d_test_res)
+
+########################################################################################
+ 
+  d_train_class = d_train$tissue # train classes as 1 for case (normal) and o for control (healthy)
+    d_train_class[d_train_class=="normal"] = 1
+    d_train_class[d_train_class=="healthy"] = 0
+  d_test_class = d_test$tissue # test classes as 1 for case (normal) and o for control (healthy)
+    d_test_class[d_test_class=="normal"] = 1
+    d_test_class[d_test_class=="healthy"] = 0
+```
+
+```{r}
+# Highest ROC-AUC and PR-AUC results
+rbind(res_mean[which(res_mean$roc == max(res_mean$roc)),],res_mean[which(res_mean$pr == max(res_mean$pr)),])
+```
+
+Create the linear model and scaling parameters tables for the data
+```{r}
+clocks = c("Horvath","Hannum","Pheno","SkinBlood","PedBE","Wu","Zhang_BLUP","Zhang_EN","EpiTOC","HypoScore","MiAge")
+
+lm_classifier_coef = rbind(
+c(summary(lmHorvath)$coefficients[1,],summary(lmHorvath)$coefficients[2,],scale_Horvath),
+c(summary(lmHannum)$coefficients[1,],summary(lmHannum)$coefficients[2,],scale_Hannum),
+c(summary(lmPheno)$coefficients[1,],summary(lmPheno)$coefficients[2,],scale_Pheno),
+c(summary(lmSkinBlood)$coefficients[1,],summary(lmSkinBlood)$coefficients[2,],scale_SkinBlood),
+c(summary(lmPedBE)$coefficients[1,],summary(lmPedBE)$coefficients[2,],scale_PedBE),
+c(summary(lmWu)$coefficients[1,],summary(lmWu)$coefficients[2,],scale_Wu),
+c(summary(lmZhang_BLUP)$coefficients[1,],summary(lmZhang_BLUP)$coefficients[2,],scale_Zhang_BLUP),
+c(summary(lmZhang_EN)$coefficients[1,],summary(lmZhang_EN)$coefficients[2,],scale_Zhang_EN),
+c(summary(lmEpiTOC)$coefficients[1,],summary(lmEpiTOC)$coefficients[2,],scale_EpiTOC),
+c(summary(lmHypoScore)$coefficients[1,],summary(lmHypoScore)$coefficients[2,],scale_HypoScore),
+c(summary(lmMiAge)$coefficients[1,],summary(lmMiAge)$coefficients[2,],scale_MiAge))
+lm_classifier_coef = cbind(clocks,lm_classifier_coef)
+
+colnames(lm_classifier_coef) = c("clocks","Intercept Estimate","Intercept Std. Error","Intercept t value","Intercept Pr(>|t|)","Age Estimate","Age Std. Error","Age t value","Age Pr(>|t|)","mean","SD")
+
+as.data.frame(lm_classifier_coef)
+
+```
+
+### Training and testing the classifier, and visualising the results
+
+```{r}
+tm = glmnet(
+            x=d_train_res,
+            y=d_train_class,lambda = 0.16,alpha = 0.05, family = "binomial")
+coef(tm)
+          
+          # predict the results on test
+          tmp = predict(tm, as.matrix(d_test_res),type="response",newoffset = d_test_class)
+
+plot_ds = as.data.frame(cbind(data_test$datasetID,data_test$sampleID,tmp,data_test$tissue))
+colnames(plot_ds) = c("datasetID","sampleID","score","tissue")
+plot_ds$score = as.numeric(plot_ds$score)
+plot_a = ggplot() +
+    geom_histogram(data = plot_ds[plot_ds$tissue == "normal",], aes(y = -(..count..), x = score, fill = datasetID), col = "black", alpha=.6,bins = 50, position = "stack") +
+    geom_histogram(data = plot_ds[plot_ds$tissue == "healthy",], aes(y = ..count.., x = score, fill = datasetID), col = "black", alpha=.6,bins = 50, position = "stack") +
+  theme(legend.position = c(0.75, 0.75),
+        legend.background = element_rect(fill = "white", color = "black")) +
+      labs(#title = "Four datasets, by dataset",
+          x = "score",
+          y = "count")
+#ggsave(filename = "./your/path/clasifier_hist_all_dataset.png",plot = plot_a,width = 12,units = "in")
+plot_b =  ggplot() +
+    geom_histogram(data = plot_ds[plot_ds$tissue == "normal",], aes(y = -(..count..), x = score, fill = tissue), col = "black", alpha=.6,bins = 50, position = "identity") +
+    geom_histogram(data = plot_ds[plot_ds$tissue == "healthy",], aes(y = ..count.., x = score, fill = tissue), col = "black", alpha=.6,bins = 50, position = "identity") +
+  facet_grid("datasetID") +
+      labs(#title = "By dataset",
+          x = "score",
+          y = "count")
+#ggsave(filename = "./your/path/clasifier_hist_by_dataset.png",plot = plot_b,width = 12,units = "in")
+
+plot_c = ggplot() +
+    geom_histogram(data = plot_ds[plot_ds$tissue == "normal",], aes(y = -(..count..), x = score, fill = tissue), col = "black", alpha=.6,bins = 50, position = "identity") +
+    geom_histogram(data = plot_ds[plot_ds$tissue == "healthy",], aes(y = ..count.., x = score, fill = tissue), col = "black", alpha=.6,bins = 50, position = "identity") +
+  theme_bw() +
+  theme(legend.position = c(0.87, 0.75),
+        legend.background = element_rect(fill = "white", color = "black")) +
+      labs(#title = "Four datasets, by tissue",
+          x = "score",
+          y = "count")
+#ggsave(filename = "./results/clasifier_hist_by_tissue.png",plot = plot_c,width = 12,units = "in")
+
+ggarrange(plot_a,plot_b,plot_c,ncol = 3,labels = c("A","B","C"))
+          
+          roc_res = roc.curve(scores.class0 = tmp[d_test_class=="1"],scores.class1 = tmp[d_test_class=="0"])
+          pr_res = pr.curve(scores.class0 = tmp[d_test_class=="1"],scores.class1 = tmp[d_test_class=="0"])
+          
+plot_a
+plot_b
+plot_c
+```
+### Some extra plots
+
+```{r}
+################################
+###   ROC plot
+################################
+library(pROC)
+#define object to plot and calculate AUC
+rocobj <- pROC::roc(data_test$tissue,tmp[,1])
+
+auc = pROC::auc(rocobj)
+ci <- ci.auc(rocobj)
+ci_l <- round(ci[1], 2)
+ci_u <- round(ci[3], 2)
+
+legend_text <- paste0(
+    "AUC = ", round(auc, 2), " (95% CI = [", ci_l, " , ", ci_u, "])")
+
+plot_roc = ggroc(rocobj, colour = 'steelblue',size=1) +
+  geom_segment(aes(x = 1, xend = 0, y = 0, yend = 1), color = "grey", linetype = "dashed") +
+  theme_bw() +
+  annotate("text", x = 0.3, y = 0.05, label = legend_text)
+
+plot_roc
+```
+
+```{r}
+########################
+#### Density plot
+#########################
+
+library(ggplot2)
+density_plot = ggplot() +
+    geom_density(data = plot_ds, aes(x=score, fill=tissue),alpha=.6) + theme_bw() +
+  theme(legend.position = c(0.85, 0.7),legend.background = element_rect(fill = "white", color = "black")) 
+
+density_plot
+```
+
+```{r}
+#################################################################
+### PR curve - no confidence interval - labels were done manually
+#################################################################
+
+library(precrec)
+pr_curve_data = evalmod(scores = tmp,labels = data_test$tissue)
+pr_curve_ds = as.data.frame(cbind(pr_curve_data$prcs[[1]]$x,pr_curve_data$prcs[[1]]$y))
+colnames(pr_curve_ds) = c("recall","precision")
+pr_curve_ds$recall=as.numeric(pr_curve_ds$recall)
+pr_curve_ds$precision=as.numeric(pr_curve_ds$precision)
+
+y_val = min(pr_curve_ds$precision)
+legend_text_pr = "AUC = 0.795 "
+plot_pr = ggplot(data = pr_curve_ds, aes(x = recall, y = precision)) +
+  geom_path(colour = 'steelblue',size=1) + 
+  geom_hline(yintercept = y_val, x=0, xend=1, color = "grey", linetype = "dashed") +
+      expand_limits(y=0) +
+  theme_bw()+
+  annotate("text", x = 0.3, y = 0.05, label = legend_text_pr)
+
+plot_pr
+```
