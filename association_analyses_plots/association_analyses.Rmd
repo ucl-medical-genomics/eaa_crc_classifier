@@ -1,0 +1,1346 @@
+---
+title: "Association analyses"
+output: html_notebook
+---
+
+# Library
+```{r}
+library(ggplot2)
+library(ggExtra) #for marginal plot
+library(reshape2)
+library(ggpubr)
+library(corrplot)
+library(PerformanceAnalytics)
+library(tidyverse)
+library(jtools)
+library(data.table)
+library(gridExtra)
+library(plyr)
+library(ggsci)
+library(scales)
+library(reshape2)
+library(rstatix)
+library(RColorBrewer)
+library(cowplot)
+
+#heatmap
+library(ggcorrplot)
+library(pheatmap)
+library(infotheo)
+```
+
+# Set data path
+```{r}
+setwd("~/Documents/Colon cancer")
+data_path = "data/" # !!! Change to your path
+analysis_path = "analysis/" # !!! Change to your path
+image_path = "analysis/imgs/" # !!! Change to your path
+processed_data_path = "data/processed_data/" # !!! Change to your path
+```
+
+```{r}
+load("data/processed_data/crc_project_data.RData")
+```
+
+# Plot colours
+```{r}
+fill_all = scale_fill_manual(name = "Tissue", values = c("healthy" = "#1B9E77",
+                              "adenoma" = "#7570B3",
+                              "normal" = "#D95F02",
+                              "tumour" = "#E7298A")) 
+fill_hn = scale_fill_manual(name = "Tissue", values = c("healthy" = "#1B9E77",
+                              "normal" = "#D95F02")) 
+
+color_all = scale_color_manual(name = "Tissue", values = c("healthy" = "#1B9E77",
+                              "adenoma" = "#7570B3",
+                              "normal" = "#D95F02",
+                              "tumour" = "#E7298A")) 
+color_hn = scale_color_manual(name = "Tissue", values = c("healthy" = "#1B9E77",
+                              "normal" = "#D95F02")) 
+```
+
+# Dataset I (all tissues)
+
+## Prepare the data
+```{r}
+ds_all = ds_filtered[,c(1:64,108,65,67,69,72,74,76,79,81,83:91,111:132)] #all samples
+```
+
+## Correlation plot
+```{r}
+#prepare the data
+
+ds_all_ea = ds_all[,c(1,3,4,6:10,66:73,80:82)]
+ds_healthy = ds_all_ea[which(ds_all_ea$tissue=="healthy"),]
+ds_normal = ds_all_ea[which(ds_all_ea$tissue=="normal"),]
+ds_tumour = ds_all_ea[which(ds_all_ea$tissue=="tumour"),]
+ds_adenoma = ds_all_ea[which(ds_all_ea$tissue=="adenoma"),]
+rownames(ds_healthy) = 1:nrow(ds_healthy)
+rownames(ds_normal) = 1:nrow(ds_normal)
+rownames(ds_tumour) = 1:nrow(ds_tumour)
+rownames(ds_adenoma) = 1:nrow(ds_adenoma)
+```
+
+###Scatter plot
+```{r}
+ds_all_ea$tissue = factor(ds_all_ea$tissue, levels=c("healthy", "normal", "tumour", "adenoma"))
+
+viz_horvath_legend<-ggplot(data=ds_all_ea, aes(x=age, y=Horvath, color=tissue))+
+  geom_point(size=1.5, alpha=0.3, show.legend = FALSE)+
+  geom_smooth(se=F, method=lm, show.legend = TRUE)+
+  stat_cor(aes(color = tissue, label = ..r.label..),  cor.coef.name = c("r", "rho", "tau"), 
+           show.legend = FALSE)+  
+  xlab("Chronological age") +
+  color_all +
+  theme_bw() + theme(legend.position="bottom")
+
+viz_horvath<-ggplot(data=ds_all_ea, aes(x=age, y=Horvath, color=tissue))+
+  geom_point(size=1.5, alpha=0.3, show.legend = FALSE)+
+  geom_smooth(se=F, method=lm, show.legend = TRUE)+
+  stat_cor(aes(color = tissue, label = ..r.label..),  cor.coef.name = c("r", "rho", "tau"), 
+           show.legend = FALSE)+  
+  xlab("Chronological age") +
+  color_all +
+  theme_bw()
+
+viz_hannum<-ggplot(data=ds_all_ea, aes(x=age, y=Hannum, color=tissue))+
+  geom_point(size=1.5, alpha=0.3, show.legend = FALSE)+
+  geom_smooth(se=F, method=lm, show.legend = TRUE)+
+  stat_cor(aes(color = tissue, label = ..r.label..),  cor.coef.name = c("r", "rho", "tau"), 
+           show.legend = FALSE)+ 
+  xlab("Chronological age") +
+  color_all +
+  theme_bw()
+
+viz_pheno<-ggplot(data=ds_all_ea, aes(x=age, y=Pheno, color=tissue))+
+  geom_point(size=1.5, alpha=0.3, show.legend = FALSE)+
+  geom_smooth(se=F, method=lm, show.legend = TRUE)+
+  stat_cor(aes(color = tissue, label = ..r.label..),  cor.coef.name = c("r", "rho", "tau"), 
+           show.legend = FALSE)+ 
+  xlab("Chronological age") +
+  ylab("PhenoAge") +
+  color_all +
+  theme_bw()
+
+viz_sb<-ggplot(data=ds_all_ea, aes(x=age, y=SkinBlood, color=tissue))+
+  geom_point(size=1.5, alpha=0.3, show.legend = FALSE)+
+  geom_smooth(se=F, method=lm, show.legend = TRUE)+
+  color_all +
+  stat_cor(aes(color = tissue, label = ..r.label..),  cor.coef.name = c("r", "rho", "tau"), 
+           show.legend = FALSE)+ 
+  xlab("Chronological age") +
+  theme_bw()
+
+viz_pb<-ggplot(data=ds_all_ea, aes(x=age, y=PedBE, color=tissue))+
+  geom_point(size=1.5, alpha=0.3, show.legend = FALSE)+
+  geom_smooth(se=F, method=lm, show.legend = TRUE)+
+  color_all +
+  stat_cor(aes(color = tissue, label = ..r.label..),  cor.coef.name = c("r", "rho", "tau"), 
+           show.legend = FALSE)+ 
+  xlab("Chronological age") +
+  theme_bw()
+
+viz_wu<-ggplot(data=ds_all_ea, aes(x=age, y=Wu, color=tissue))+
+  geom_point(size=1.5, alpha=0.3, show.legend = FALSE)+
+  geom_smooth(se=F, method=lm, show.legend = TRUE)+
+  color_all +
+  stat_cor(aes(color = tissue, label = ..r.label..),  cor.coef.name = c("r", "rho", "tau"), 
+           show.legend = FALSE)+ 
+  xlab("Chronological age") +
+  theme_bw()
+
+viz_zb<-ggplot(data=ds_all_ea, aes(x=age, y=Zhang_BLUP, color=tissue))+
+  geom_point(size=1.5, alpha=0.3, show.legend = FALSE)+
+  geom_smooth(se=F, method=lm, show.legend = TRUE)+
+  color_all +
+  stat_cor(aes(color = tissue, label = ..r.label..),  cor.coef.name = c("r", "rho", "tau"), 
+           show.legend = FALSE)+ 
+  xlab("Chronological age") +
+  ylab("Zhang BLUP") +
+  theme_bw()
+
+viz_ze<-ggplot(data=ds_all_ea, aes(x=age, y=Zhang_EN, color=tissue))+
+  geom_point(size=1.5, alpha=0.3, show.legend = FALSE)+
+  geom_smooth(se=F, method=lm, show.legend = TRUE)+
+  color_all +
+  stat_cor(aes(color = tissue, label = ..r.label..),  cor.coef.name = c("r", "rho", "tau"), 
+           show.legend = FALSE)+ 
+  xlab("Chronological age") +
+  ylab("Zhang EN") +
+  theme_bw()
+
+viz_epi<-ggplot(data=ds_all_ea, aes(x=age, y=EpiTOC, color=tissue))+
+  geom_point(size=1.5, alpha=0.3, show.legend = FALSE)+
+  geom_smooth(se=F, method=lm, show.legend = TRUE)+
+  color_all +
+  stat_cor(aes(color = tissue, label = ..r.label..),  cor.coef.name = c("r", "rho", "tau"), 
+           show.legend = FALSE)+ 
+  xlab("Chronological age") +
+  ylab("EpiTOC") +
+  theme_bw()
+
+viz_hypo<-ggplot(data=ds_all_ea, aes(x=age, y=HypoScore, color=tissue))+
+  geom_point(size=1.5, alpha=0.3, show.legend = FALSE)+
+  geom_smooth(se=F, method=lm, show.legend = TRUE)+
+  color_all +
+  stat_cor(aes(color = tissue, label = ..r.label..),  cor.coef.name = c("r", "rho", "tau"), 
+           show.legend = FALSE, label.y.npc = "bottom")+ 
+  xlab("Chronological age") +
+  ylab("HypoClock") +
+  theme_bw()
+
+viz_mi<-ggplot(data=ds_all_ea, aes(x=age, y=MiAge, color=tissue))+
+  geom_point(size=1.5, alpha=0.3, show.legend = FALSE)+
+  geom_smooth(se=F, method=lm, show.legend = TRUE)+
+  color_all +
+  stat_cor(aes(color = tissue, label = ..r.label..),  cor.coef.name = c("r", "rho", "tau"), 
+           show.legend = FALSE)+ 
+  xlab("Chronological age") +
+  ylab("MiAge") +
+  theme_bw()
+
+#visualise all plots
+#viz_all = ggarrange(viz_horvath, viz_hannum, viz_pheno,
+                    #viz_sb, viz_pb, viz_wu,
+                    #viz_zb, viz_ze, viz_epi,
+                    #viz_hypo, viz_mi, 
+                    #nrow = 3, ncol = 4, common.legend = TRUE)
+#viz_all
+
+#main text
+viz_main = ggarrange(viz_horvath, viz_hannum, viz_pheno,
+                    viz_wu, viz_epi, viz_hypo, 
+                    nrow = 3, ncol = 2, common.legend = TRUE)
+viz_main
+
+#supplementary
+viz_supp = ggarrange(viz_sb, viz_pb, viz_zb,
+                    viz_ze, viz_mi, 
+                    nrow = 2, ncol = 3, common.legend = TRUE)
+viz_supp
+```
+
+### Marginal plot
+```{r}
+marg_hor = ggMarginal(viz_horvath + theme(legend.position = "none"), 
+                      type = "density", groupFill = TRUE)
+marg_han = ggMarginal(viz_hannum + theme(legend.position = "none"), 
+                      type = "density", groupFill = TRUE)
+marg_pheno = ggMarginal(viz_pheno + theme(legend.position = "none"), 
+                        type = "density", groupFill = TRUE)
+marg_sb = ggMarginal(viz_sb + theme(legend.position = "none"), 
+                     type = "density", groupFill = TRUE)
+marg_pb = ggMarginal(viz_pb + theme(legend.position = "none"),
+                     type = "density", groupFill = TRUE)
+marg_wu = ggMarginal(viz_wu + theme(legend.position = "none"),
+                     type = "density", groupFill = TRUE)
+marg_zb = ggMarginal(viz_zb + theme(legend.position = "none"),
+                     type = "density", groupFill = TRUE)
+marg_ze = ggMarginal(viz_ze + theme(legend.position = "none"),
+                     type = "density", groupFill = TRUE)
+marg_epi = ggMarginal(viz_epi + theme(legend.position = "none"),
+                      type = "density", groupFill = TRUE)
+marg_hc = ggMarginal(viz_hypo + theme(legend.position = "none"),
+                     type = "density", groupFill = TRUE)
+marg_mi = ggMarginal(viz_mi + theme(legend.position = "none"),
+                     type = "density", groupFill = TRUE)
+
+get_only_legend <- function(plot) {
+plot_table <- ggplot_gtable(ggplot_build(plot)) 
+legend_plot <- which(sapply(plot_table$grobs, function(x) x$name) == "guide-box") 
+legend <- plot_table$grobs[[legend_plot]]
+return(legend) 
+}
+
+legend <- get_only_legend(viz_horvath_legend)
+legend2 <- get_only_legend(viz_horvath)
+```
+
+```{r}
+#Main text figure 
+marg_main = grid.arrange(marg_hor, marg_han, marg_pheno,
+                         marg_wu, marg_epi, marg_hc, NULL, 
+                         legend, NULL, ncol=3, nrow =3, heights=c(2.3, 2.3, 0.5))
+
+ggsave(marg_main,filename = paste(image_path,"marginal_ea_main_14jul.png",sep = ""), height = 7, width = 10,units = "in")
+
+marg_supp = grid.arrange(marg_sb, marg_pb, marg_zb, marg_ze, 
+             marg_mi, legend2, ncol=3, nrow =2, heights=c(2.3, 2.3))
+
+ggsave(marg_supp,filename = paste(image_path,"marginal_ea_supp.png",sep = ""), height = 6.5, width = 10,units = "in")
+```
+
+##Heatmap of EAA and clinical characteristics
+```{r}
+# prepare the data
+ds_all_eaa = ds_all[,c(1,3,4,6:10,83:104)]
+ds_bin = ds_all_eaa[,c(3:30)]
+ds_bin[ds_bin=="Right"]=1
+ds_bin[ds_bin=="Left"]=0
+ds_bin[ds_bin=="M"]=0
+ds_bin[ds_bin=="F"]=1
+ds_bin_adj = ds_bin[,c(1:6,18:28)]
+ds_bin_un = ds_bin[,c(1:6,7:17)]
+colnames(ds_bin_adj)=c("Race","Sex","Age", "Tissue",
+                   "Sample location", "Site",
+                   "Horvath AA", "Hannum AA",
+                   "Pheno AA", "SkinBlood AA",
+                   "PedBE AA", "Wu AA",
+                   "Zhang BLUP AA", "Zhang EN AA",
+                   "EpiTOC AA","HypoClock AA",
+                   "MiAge AA"
+                   )
+colnames(ds_bin_un)=c("Race","Sex","Age", "Tissue",
+                   "Sample location", "Site",
+                   "Horvath AA, unadjusted", "Hannum AA, unadjusted",
+                   "Pheno AA, unadjusted", "SkinBlood AA, unadjusted",
+                   "PedBE AA, unadjusted", "Wu AA, unadjusted",
+                   "Zhang BLUP AA, unadjusted", "Zhang EN AA, unadjusted",
+                   "EpiTOC AA, unadjusted","HypoClock AA, unadjusted",
+                   "MiAge AA, unadjusted"
+                   )
+
+ds_bin_h_adj = ds_bin_adj[which(ds_bin_adj$Tissue=="healthy"),]
+ds_bin_n_adj = ds_bin_adj[which(ds_bin_adj$Tissue=="normal"),]
+ds_bin_t_adj = ds_bin_adj[which(ds_bin_adj$Tissue=="tumour"),]
+ds_bin_a_adj = ds_bin_adj[which(ds_bin_adj$Tissue=="adenoma"),]
+
+ds_bin_h_un = ds_bin_un[which(ds_bin_un$Tissue=="healthy"),]
+ds_bin_n_un = ds_bin_un[which(ds_bin_un$Tissue=="normal"),]
+ds_bin_t_un = ds_bin_un[which(ds_bin_un$Tissue=="tumour"),]
+ds_bin_a_un = ds_bin_un[which(ds_bin_un$Tissue=="adenoma"),]
+
+## healthy
+cor_h_eaa = ds_bin_h_adj[,c(2,3,6:17)]
+cor_h_eaa = apply(cor_h_eaa,MARGIN = 2,as.numeric)
+cor_h_eaa2 = ds_bin_h_un[,c(2,3,6:17)]
+cor_h_eaa2 = apply(cor_h_eaa2,MARGIN = 2,as.numeric)
+
+## normal
+cor_n_eaa = ds_bin_n_adj[,c(2,3,6:17)]
+cor_n_eaa = apply(cor_n_eaa,MARGIN = 2,as.numeric)
+cor_n_eaa2 = ds_bin_n_un[,c(2,3,6:17)]
+cor_n_eaa2 = apply(cor_n_eaa2,MARGIN = 2,as.numeric)
+
+## tumour
+cor_t_eaa = ds_bin_t_adj[,c(2,3,6:17)]
+cor_t_eaa = apply(cor_t_eaa,MARGIN = 2,as.numeric)
+cor_t_eaa2 = ds_bin_t_un[,c(2,3,6:17)]
+cor_t_eaa2 = apply(cor_t_eaa2,MARGIN = 2,as.numeric)
+
+## adenoma
+cor_a_eaa = ds_bin_a_adj[,c(2,3,7:17)]
+cor_a_eaa = apply(cor_a_eaa,MARGIN = 2,as.numeric)
+cor_a_eaa2 = ds_bin_a_un[,c(2,3,7:17)]
+cor_a_eaa2 = apply(cor_a_eaa2,MARGIN = 2,as.numeric)
+
+
+# heatmap
+## EAA healthy
+### adjusted
+pheat_h = pheatmap(abs(cor(cor_h_eaa,use = "pairwise.complete.obs",
+                 method = "spearman",
+                 #na.rm=TRUE
+                 )),angle_col=315,fontsize=8,clustering_method = "ward.D2", 
+                 main="Healthy", treeheight_row = 0,
+         filename = paste(image_path,"eaa_heatmap_healthy_ward2_19jun.png",sep=""))
+fwrite(as.data.frame(cor(cor_h_eaa,use = "pairwise.complete.obs",method = "spearman")),file = paste(image_path,"eaa_heatmap_healthy_ward2_19jun.csv",sep=""))
+
+### unadjusted
+pheat_h_un = pheatmap(abs(cor(cor_h_eaa2,use = "pairwise.complete.obs",
+                 method = "spearman", 
+                 #na.rm=TRUE
+                 )),angle_col=315,fontsize=8,clustering_method = "ward.D2", 
+                 main="Healthy", treeheight_row = 0,
+         filename = paste(image_path,"eaa_heatmap_healthy_ward2_unadj_19jun.png",sep=""))
+fwrite(as.data.frame(cor(cor_h_eaa2,use = "pairwise.complete.obs",method = "spearman")),file = paste(image_path,"eaa_heatmap_healthy_ward2_unadj_19jun.csv",sep=""))
+
+## EAA normal
+### adjusted
+pheat_n = pheatmap(abs(cor(cor_n_eaa,use = "pairwise.complete.obs",
+                 method = "spearman", 
+                 #na.rm=TRUE
+                 )),angle_col=315,fontsize=8,clustering_method = "ward.D2", 
+                 main="Normal", treeheight_row = 0,
+         filename = paste(image_path,"eaa_heatmap_normal_ward2_19jun.png",sep=""))
+fwrite(as.data.frame(cor(cor_n_eaa,use = "pairwise.complete.obs",method = "spearman")),file = paste(image_path,"eaa_heatmap_normal_19jun.csv",sep=""))
+
+### unadjusted
+pheat_n_un = pheatmap(abs(cor(cor_n_eaa2,use = "pairwise.complete.obs",
+                 method = "spearman", 
+                 #na.rm=TRUE
+                 )),angle_col=315,fontsize=8,clustering_method = "ward.D2", 
+                 main="Normal", treeheight_row = 0,
+         filename = paste(image_path,"eaa_heatmap_normal_ward2_unadj_19jun.png",sep=""))
+fwrite(as.data.frame(cor(cor_n_eaa2,use = "pairwise.complete.obs",method = "spearman")),file = paste(image_path,"eaa_heatmap_normal_unadj_19jun.csv",sep=""))
+
+
+## EAA tumour
+### adjusted
+pheat_t = pheatmap(abs(cor(cor_t_eaa,use = "pairwise.complete.obs",
+                 method = "spearman", 
+                 #na.rm=TRUE
+                 )),angle_col=315,fontsize=8,clustering_method = "ward.D2", 
+                 main="Tumour", treeheight_row = 0,
+         filename = paste(image_path,"eaa_heatmap_tumour_ward2_19jun.png",sep=""))
+fwrite(as.data.frame(cor(cor_t_eaa,use = "pairwise.complete.obs",method = "spearman")),file = paste(image_path,"eaa_heatmap_tumour_19jun.csv",sep=""))
+
+### unadjusted
+pheat_t_un = pheatmap(abs(cor(cor_t_eaa2,use = "pairwise.complete.obs",
+                 method = "spearman", 
+                 #na.rm=TRUE
+                 )),angle_col=315,fontsize=8,clustering_method = "ward.D2", 
+                 main="Tumour", treeheight_row = 0,
+         filename = paste(image_path,"eaa_heatmap_tumour_ward2_unadj_19jun.png",sep=""))
+fwrite(as.data.frame(cor(cor_t_eaa2,use = "pairwise.complete.obs",method = "spearman")),file = paste(image_path,"eaa_heatmap_tumour_unadj_19jun.csv",sep=""))
+
+## EAA adenoma
+### adjusted
+pheat_a = pheatmap(abs(cor(cor_a_eaa,use = "pairwise.complete.obs",
+                 method = "spearman", 
+                 #na.rm=TRUE
+                 )),angle_col=315,fontsize=8,clustering_method = "ward.D2", 
+                 main="Adenoma", treeheight_row = 0,
+         filename = paste(image_path,"eaa_heatmap_adenoma_ward2_19jun.png",sep=""))
+fwrite(as.data.frame(cor(cor_a_eaa,use = "pairwise.complete.obs",method = "spearman")),file = paste(image_path,"eaa_heatmap_adenoma_19jun.csv",sep=""))
+
+### unadjusted
+pheat_a_un = pheatmap(abs(cor(cor_a_eaa2,use = "pairwise.complete.obs",
+                 method = "spearman", 
+                 #na.rm=TRUE
+                 )),angle_col=315,fontsize=8,clustering_method = "ward.D2", 
+                 main="Adenoma", treeheight_row = 0,
+         filename = paste(image_path,"eaa_heatmap_adenoma_ward2_unadj_19jun.png",sep=""))
+fwrite(as.data.frame(cor(cor_a_eaa2,use = "pairwise.complete.obs",method = "spearman")),file = paste(image_path,"eaa_heatmap_adenoma_unadj_19jun.csv",sep=""))
+
+## normal - healthy adjusted, for main text
+pheat_list0=list()
+pheat_list0[[1]]=pheat_h[[4]]
+pheat_list0[[2]]=pheat_n[[4]]
+heatmap_main = grid.arrange(grobs=pheat_list0, ncol=2, nrow=1)
+pheat_h1 = as_ggplot(heatmap_main)
+
+# tumour - adenoma adjusted, for supplementary
+pheat_list01=list()
+pheat_list01[[1]]=pheat_t[[4]]
+pheat_list01[[2]]=pheat_a[[4]]
+heatmap_supp = grid.arrange(grobs=pheat_list01, ncol=2, nrow=1)
+pheat_supp = as_ggplot(heatmap_supp)
+ggsave(pheat_supp,filename = paste(image_path,"heatmap_adj_supp.png",sep = ""), height = 6, width = 12,units = "in")
+
+# all tissue, adjusted
+pheat_list=list()
+pheat_list[[1]]=pheat_h[[4]]
+pheat_list[[2]]=pheat_n[[4]]
+pheat_list[[3]]=pheat_t[[4]]
+pheat_list[[4]]=pheat_a[[4]]
+heatmap_clocks = grid.arrange(grobs=pheat_list, ncol=2, nrow=2)
+ggsave("heatmap_eaa_all_adj_19jun.png", heatmap_clocks, width = 10, height = 10)
+
+# all tissue, unadjusted
+pheat_list2=list()
+pheat_list2[[1]]=pheat_h_un[[4]]
+pheat_list2[[2]]=pheat_n_un[[4]]
+pheat_list2[[3]]=pheat_t_un[[4]]
+pheat_list2[[4]]=pheat_a_un[[4]]
+heatmap_clocks2 = grid.arrange(grobs=pheat_list2, ncol=2, nrow=2)
+ggsave("heatmap_eaa_all_unadj_19jun.png", heatmap_clocks2, width = 10, height = 10)
+```
+
+```{r}
+# Figure 3
+pic_1 = plot_grid(marg_main, pheat_h1, labels = c("A", "B"), nrow=2, ncol=1, heights=c(6,7))
+
+ggsave(pic_1,filename = paste(image_path,"pic_1_main_14jul.png",sep = ""), height = 12, width = 12,units = "in")
+```
+
+## Boxplot of EAA between tissues
+### Main text
+#### Boxplots
+```{r}
+# prepare the data
+eaa_list = names(ds_all)[83:93]
+eaa_adj_list = names(ds_all)[94:104]
+
+ds_eaa = ds_all[,c(1:10,65,83:104)]
+ds_long=melt(ds_eaa,measure.vars=names(ds_eaa)[12:33])
+ds_long$clock=as.character(ds_long$variable)
+
+
+ds_long$clock[ds_long$clock=="HorvathAAr" | ds_long$clock=="HorvathAAr_sex"] = "Horvath AA"
+ds_long$clock[ds_long$clock=="HannumAAr" | ds_long$clock=="HannumAAr_sex"] = "Hannum AA"
+ds_long$clock[ds_long$clock=="PhenoAAr" | ds_long$clock=="PhenoAAr_sex"] = "Pheno AA"
+ds_long$clock[ds_long$clock=="SkinBloodAAr" | ds_long$clock=="SkinBloodAAr_sex"] = "SkinBlood AA"
+ds_long$clock[ds_long$clock=="PedBEAAr" | ds_long$clock=="PedBEAAr_sex"] = "PedBE AA"
+ds_long$clock[ds_long$clock=="WuAAr" | ds_long$clock=="WuAAr_sex"] = "Wu AA"
+ds_long$clock[ds_long$clock=="Zhang_BLUPAAr" | ds_long$clock=="Zhang_BLUPAAr_sex"] = "Zhang BLUP AA"
+ds_long$clock[ds_long$clock=="Zhang_ENAAr" | ds_long$clock=="Zhang_ENAAr_sex"] = "Zhang EN AA"
+ds_long$clock[ds_long$clock=="EpiTOCAAr" | ds_long$clock=="EpiTOCAAr_sex"] = "EpiTOC AA"
+ds_long$clock[ds_long$clock=="HypoScoreAAr" | ds_long$clock=="HypoScoreAAr_sex"] = "HypoClock AA"
+ds_long$clock[ds_long$clock=="MiAgeAAr" | ds_long$clock=="MiAgeAAr_sex"] = "MiAge AA"
+
+ds_long$adjustment=as.character(ds_long$variable)
+ds_long$adjustment[ds_long$adjust %in% eaa_list]="unadjusted"
+ds_long$adjustment[ds_long$adjust!="unadjusted"]="adjusted"
+ds_long$clock=as.factor(ds_long$clock)
+
+#epigenetic clocks
+ds_long_ec = ds_long[-which(ds_long$clock=="EpiTOC AA" |
+                             ds_long$clock=="HypoClock AA" |
+                             ds_long$clock=="MiAge AA"),]
+
+#epigenetic mitotic clocks
+ds_long_mc = ds_long[which(ds_long$clock=="EpiTOC AA" |
+                             ds_long$clock=="HypoClock AA" |
+                             ds_long$clock=="MiAge AA"),]
+
+
+####### For main text
+ds_long_main1 = ds_long[which(ds_long$clock=="Horvath AA" |
+                             ds_long$clock=="Hannum AA" |
+                             ds_long$clock=="Pheno AA" |
+                               ds_long$clock=="SkinBlood AA" |
+                               ds_long$clock=="Wu AA" |
+                               ds_long$clock=="PedBE AA"),]
+ds_long_main2 = ds_long[which(ds_long$clock=="EpiTOC AA" |
+                             ds_long$clock=="HypoClock AA"),]
+ds_long_main3 = ds_long[which(ds_long$clock=="MiAge AA"),]
+```
+
+
+```{r}
+# set the factors
+## all epigenetic clocks
+ds_long_ec$Legend = factor(ds_long_ec$tissue, levels=c("healthy", "adenoma", "normal", "tumour")) # 1st and 2nd gen
+ds_long_mc$Legend = factor(ds_long_mc$tissue, levels=c("healthy", "adenoma", "normal", "tumour")) # epigenetic mitotic clocks
+
+## for main text
+ds_long_main1$Legend = factor(ds_long_main1$tissue, levels=c("healthy", "adenoma", "normal", "tumour")) # 1st and 2nd gen
+ds_long_main2$Legend = factor(ds_long_main2$tissue, levels=c("healthy", "adenoma", "normal", "tumour")) # EpiTOC and HypoClock
+ds_long_main3$Legend = factor(ds_long_main3$tissue, levels=c("healthy", "adenoma", "normal", "tumour")) # MiAge 
+
+##
+ds_long_ec$clock = factor(ds_long_ec$clock, levels =  rev(c("Horvath AA","Hannum AA", "Pheno AA",  "SkinBlood AA", "Wu AA", "PedBE AA", "Zhang BLUP AA", "Zhang EN AA"))) # 1st and 2nd gen
+ds_long_mc$clock = factor(ds_long_mc$clock, levels =  rev(c("EpiTOC AA", "HypoClock AA", "MiAge AA"))) # epigenetic mitotic clocks
+
+ds_long_main1$clock = factor(ds_long_main1$clock, levels = rev(c("Horvath AA", "Hannum AA", "Pheno AA", "SkinBlood AA", "PedBE AA", "Wu AA"))) # 1st and 2nd gen
+ds_long_main2$clock = factor(ds_long_main2$clock, levels = rev(c("EpiTOC AA", "HypoClock AA"))) # EpiTOC and HypoClock
+ds_long_main3$clock = factor(ds_long_main3$clock, levels = rev(c("MiAge AA"))) # MiAge 
+
+## select the adjusted EAAs
+ds_long_ec_adj = ds_long_ec[which(ds_long_ec$adjustment=="adjusted"),]
+ds_long_mc_adj = ds_long_mc[which(ds_long_mc$adjustment=="adjusted"),]
+
+ds_long_main1_adj = ds_long_main1[which(ds_long_main1$adjustment=="adjusted"),]
+ds_long_main2_adj = ds_long_main2[which(ds_long_main2$adjustment=="adjusted"),]
+ds_long_main3_adj = ds_long_main3[which(ds_long_main3$adjustment=="adjusted"),]
+
+## normal and healthy
+ds_long_main2_adj = ds_long_main2_adj[which(ds_long_main2_adj$Legend=="normal" | ds_long_main2_adj$Legend=="healthy"),]
+ds_long_main3_adj = ds_long_main3_adj[which(ds_long_main3_adj$Legend=="normal" |                                       ds_long_main3_adj$Legend=="healthy"),]
+ds_long_ec_adj_hn = ds_long_ec_adj[which(ds_long_ec_adj$Legend=="normal" |
+                                       ds_long_ec_adj$Legend=="healthy"),]
+ds_long_mc_adj_hn = ds_long_mc_adj[which(ds_long_mc_adj$Legend=="normal" |
+                                       ds_long_mc_adj$Legend=="healthy"),]
+
+ds_long_main2_adj$Legend = factor(ds_long_main2_adj$tissue, levels=c("healthy", "normal"))
+ds_long_main3_adj$Legend = factor(ds_long_main3_adj$tissue, levels=c("healthy", "normal"))
+ds_long_ec_adj_hn$Legend = factor(ds_long_ec_adj_hn$tissue, levels=c("healthy", "normal"))
+ds_long_mc_adj_hn$Legend = factor(ds_long_mc_adj_hn$tissue, levels=c("healthy", "normal"))
+ds_long_ec_adj_hn$clock = factor(ds_long_ec_adj_hn$clock, levels =  rev(c("Horvath AA","Hannum AA", "Pheno AA",  "SkinBlood AA", "Wu AA", "PedBE AA", "Zhang BLUP AA", "Zhang EN AA")))
+ds_long_mc_adj_hn$clock = factor(ds_long_mc_adj_hn$clock, levels =  rev(c("EpiTOC AA", "HypoClock AA", "MiAge AA")))
+ds_long_main3_adj$clock = factor(ds_long_main3_adj$clock, levels = rev(c("MiAge AA")))
+
+comp_boxp_hn <- list( c("healthy", "normal"))
+
+#########
+## for main text
+bxp_main1 = ggboxplot(ds_long_ec_adj_hn, 
+                x = "clock", y = "value", fill = "Legend", 
+                 palette = "Dark2")#, facet.by = "adjust")
+
+ttest_main1 <- ds_long_ec_adj_hn %>%
+    group_by(clock) %>%
+    t_test(value ~ Legend, comparisons = comp_boxp_hn) %>%
+    add_significance("p")
+ttest_main1  <- ttest_main1  %>%
+  add_xy_position(x = "clock", dodge = 0.8, step.increase = 0.05)
+
+bxp_fin_main1 = bxp_main1 + stat_pvalue_manual(
+    ttest_main1, label = "p.signif", tip.length = 0.01,
+    coord.flip = TRUE, 
+    step.group.by = "clock", 
+    hjust = 0.5, angle = 270, step.increase = 0, hide.ns = FALSE,
+    ) + coord_flip() + fill_all + grids(size = 0.9) + xlab("EAA")
+bxp_fin_main1
+
+#####
+bxp_main2 = ggboxplot(ds_long_main2_adj, 
+                x = "clock", y = "value", fill = "Legend", 
+                 palette = "Dark2")#, facet.by = "adjust")
+
+ttest_main2 <- ds_long_main2_adj %>%
+    group_by(clock) %>%
+    t_test(value ~ Legend, comparisons = comp_boxp_hn) %>%
+    add_significance("p")
+ttest_main2  <- ttest_main2  %>%
+  add_xy_position(x = "clock", dodge = 0.8, step.increase = 0.05)
+
+bxp_fin_main2 = bxp_main2 + stat_pvalue_manual(
+    ttest_main2, label = "p.signif", tip.length = 0.01,
+    coord.flip = TRUE, 
+    step.group.by = "clock", 
+    hjust = 0.5, angle = 270, step.increase = 0, hide.ns = FALSE,
+    ) + coord_flip() + fill_all + grids(size = 0.9) + xlab("EAA")
+bxp_fin_main2
+
+####
+bxp_main3 = ggboxplot(ds_long_main3_adj, 
+                x = "clock", y = "value", fill = "Legend", 
+                 palette = "Dark2")#, facet.by = "adjust")
+
+ttest_main3 <- ds_long_main3_adj %>%
+    group_by(clock) %>%
+    t_test(value ~ Legend, comparisons = comp_boxp_hn) %>%
+    add_significance("p")
+ttest_main3  <- ttest_main3  %>%
+  add_xy_position(x = "clock", dodge = 0.8, step.increase = 0.05)
+
+bxp_fin_main3 = bxp_main3 + stat_pvalue_manual(
+    ttest_main3, label = "p.signif", tip.length = 0.01,
+    coord.flip = TRUE, 
+    step.group.by = "clock", 
+    hjust = 0.5, angle = 270, step.increase = 0, hide.ns = FALSE,
+    ) + coord_flip() + fill_all + grids(size = 0.9) + xlab("EAA")
+bxp_fin_main3
+
+bxp_02_main = ggarrange(bxp_fin_main2, bxp_fin_main3,
+                        nrow=2, common.legend = TRUE)
+bxp_02_main
+```
+
+#### Density plots
+```{r}
+# set the factors' order
+ds_long_ec_adj$tissue = factor(ds_long_ec_adj$tissue, levels=c("healthy", "normal", "tumour", "adenoma"))
+ds_long_mc_adj$tissue = factor(ds_long_mc_adj$tissue, levels=c("healthy", "normal", "tumour", "adenoma"))
+
+# density plot for each clock
+eaa_dens_hor <- ggplot(ds_long_ec_adj[which(ds_long_ec_adj$clock=="Horvath AA"),], 
+                   aes(x=value, fill = tissue)) + 
+  geom_density(alpha = 0.7) +
+  fill_all +
+  theme_bw() +
+  xlab("Horvath AA")
+eaa_dens_hor
+
+eaa_dens_han <- ggplot(ds_long_ec_adj[which(ds_long_ec_adj$clock=="Hannum AA"),], 
+                   aes(x=value, fill = tissue)) + 
+  geom_density(alpha = 0.7) +
+  fill_all +
+  theme_bw() +
+  xlab("Hannum AA")
+
+eaa_dens_phe <- ggplot(ds_long_ec_adj[which(ds_long_ec_adj$clock=="Pheno AA"),], 
+                   aes(x=value, fill = tissue)) + 
+  geom_density(alpha = 0.7) +
+  fill_all +
+  theme_bw() +
+  xlab("Pheno AA")
+
+eaa_dens_sb <- ggplot(ds_long_ec_adj[which(ds_long_ec_adj$clock=="SkinBlood AA"),], 
+                   aes(x=value, fill = tissue)) + 
+  geom_density(alpha = 0.7) +
+  fill_all +
+  theme_bw() +
+  xlab("SkinBlood AA")
+
+eaa_dens_pb <- ggplot(ds_long_ec_adj[which(ds_long_ec_adj$clock=="PedBE AA"),], 
+                   aes(x=value, fill = tissue)) + 
+  geom_density(alpha = 0.7) +
+  fill_all +
+  theme_bw() +
+  xlab("PedBE AA")
+
+eaa_dens_wu <- ggplot(ds_long_ec_adj[which(ds_long_ec_adj$clock=="Wu AA"),], 
+                   aes(x=value, fill = tissue)) + 
+  geom_density(alpha = 0.7) +
+  fill_all +
+  theme_bw() +
+  xlab("Wu AA")
+
+eaa_dens_zb <- ggplot(ds_long_ec_adj[which(ds_long_ec_adj$clock=="Zhang BLUP AA"),], 
+                   aes(x=value, fill = tissue)) + 
+  geom_density(alpha = 0.7) +
+  fill_all +
+  theme_bw() +
+  xlab("Zhang BLUP AA")
+
+eaa_dens_ze <- ggplot(ds_long_ec_adj[which(ds_long_ec_adj$clock=="Zhang EN AA"),], 
+                   aes(x=value, fill = tissue)) + 
+  geom_density(alpha = 0.7) +
+  fill_all +
+  theme_bw() +
+  xlab("Zhang EN AA")
+
+eaa_dens_epi <- ggplot(ds_long_mc_adj[which(ds_long_mc_adj$clock=="EpiTOC AA"),], 
+                   aes(x=value, fill = tissue)) + 
+  geom_density(alpha = 0.7) +
+  fill_all +
+  theme_bw() +
+  xlab("EpiTOC AA")
+
+eaa_dens_hc <- ggplot(ds_long_mc_adj[which(ds_long_mc_adj$clock=="HypoClock AA"),], 
+                   aes(x=value, fill = tissue)) + 
+  geom_density(alpha = 0.7) +
+  fill_all +
+  theme_bw() +
+  xlab("HypoClock AA")
+
+eaa_dens_mi <- ggplot(ds_long_mc_adj[which(ds_long_mc_adj$clock=="MiAge AA"),], 
+                   aes(x=value, fill = tissue)) + 
+  geom_density(alpha = 0.7) +
+  fill_all +
+  theme_bw() +
+  xlab("MiAge AA")
+
+# for main text
+eaa_dens_main = ggarrange(eaa_dens_hor, eaa_dens_han, eaa_dens_phe,
+                    eaa_dens_sb, eaa_dens_pb, eaa_dens_wu, 
+                    eaa_dens_epi, eaa_dens_hc, 
+                    nrow = 4, ncol = 2, common.legend = TRUE)
+eaa_dens_main
+
+# supplementary figure
+eaa_dens_all = ggarrange(eaa_dens_hor, eaa_dens_han, eaa_dens_phe,
+                         eaa_dens_sb, eaa_dens_pb,
+                         eaa_dens_wu, eaa_dens_zb,
+                         eaa_dens_ze,
+                         eaa_dens_epi, eaa_dens_hc,  eaa_dens_mi,
+                         nrow = 3, ncol = 4, common.legend = TRUE)
+
+eaa_dens_all
+
+ggsave(eaa_dens_all,filename = paste(image_path,"eaa_dens_supp_29aug.png",sep = ""), height = 7, width = 12,units = "in")
+```
+
+#### Combined
+```{r}
+# Figure for main text
+pic_2 = ggarrange(bxp_fin_main1,
+          ggarrange(bxp_02_main, eaa_dens_main, ncol = 1, 
+                    labels = c("B", "C")),
+          nrow = 1, 
+          labels = "A"                            
+          ) 
+pic_2
+ggsave(pic_2,filename = paste(image_path,"pic_2_main_29aug.png",sep=""), width = 16, height = 18)
+```
+
+### Supplementary
+```{r}
+ds_eaa$tissue = factor(ds_eaa$tissue, levels=c("healthy", "normal", "tumour", "adenoma"))
+my_comparisons <- list( c("healthy", "normal"), 
+                        c("healthy", "tumour"), 
+                        c("healthy", "adenoma"),
+                        c("normal", "tumour"),
+                        c("normal", "adenoma"),
+                        c("tumour", "adenoma"))
+```
+
+#### Boxplot - adjusted EAAs
+```{r}
+Horvath = ggboxplot(ds_eaa, x = "tissue", y = "HorvathAAr_sex", fill = "tissue",
+                ylab = "Horvath AA") + 
+  stat_compare_means(comparisons = my_comparisons, method = "t.test", 
+                                        label = "p.signif") + #coord_flip()
+  scale_fill_brewer(palette = "Dark2") + grids(size = 0.5)+ 
+  theme(axis.title.x=element_blank(),
+        axis.text.x=element_blank(),
+        axis.ticks.x=element_blank())
+
+Hannum = ggboxplot(ds_eaa, x = "tissue", y = "HannumAAr_sex", fill = "tissue",
+                ylab = "Hannum AA") + 
+  stat_compare_means(comparisons = my_comparisons, method = "t.test", 
+                                        label = "p.signif") + #coord_flip()
+  scale_fill_brewer(palette = "Dark2") + grids(size = 0.5)+ 
+  theme(axis.title.x=element_blank(),
+        axis.text.x=element_blank(),
+        axis.ticks.x=element_blank())
+
+Pheno = ggboxplot(ds_eaa, x = "tissue", y = "PhenoAAr_sex", fill = "tissue",
+                ylab = "Pheno AA") + 
+  stat_compare_means(comparisons = my_comparisons, method = "t.test", 
+                                        label = "p.signif") + #coord_flip()
+  scale_fill_brewer(palette = "Dark2") + grids(size = 0.5)+ 
+  theme(axis.title.x=element_blank(),
+        axis.text.x=element_blank(),
+        axis.ticks.x=element_blank())
+
+SkinBlood = ggboxplot(ds_eaa, x = "tissue", y = "SkinBloodAAr_sex", fill = "tissue",
+                ylab = "SkinBlood AA") + 
+  stat_compare_means(comparisons = my_comparisons, method = "t.test", 
+                                        label = "p.signif") + #coord_flip()
+  scale_fill_brewer(palette = "Dark2") + grids(size = 0.5)+ 
+  theme(axis.title.x=element_blank(),
+        axis.text.x=element_blank(),
+        axis.ticks.x=element_blank())
+
+PedBe = ggboxplot(ds_eaa, x = "tissue", y = "PedBEAAr_sex", fill = "tissue",
+                ylab = "PedBE AA") + 
+  stat_compare_means(comparisons = my_comparisons, method = "t.test", 
+                                        label = "p.signif") + #coord_flip()
+  scale_fill_brewer(palette = "Dark2") + grids(size = 0.5)+ 
+  theme(axis.title.x=element_blank(),
+        axis.text.x=element_blank(),
+        axis.ticks.x=element_blank())
+
+Wu = ggboxplot(ds_eaa, x = "tissue", y = "WuAAr_sex", fill = "tissue",
+                ylab = "Wu AA") + 
+  stat_compare_means(comparisons = my_comparisons, method = "t.test", 
+                                        label = "p.signif") + #coord_flip()
+  scale_fill_brewer(palette = "Dark2") + grids(size = 0.5)+ 
+  theme(axis.title.x=element_blank(),
+        axis.text.x=element_blank(),
+        axis.ticks.x=element_blank())
+
+ZhangB = ggboxplot(ds_eaa, x = "tissue", y = "Zhang_BLUPAAr_sex", fill = "tissue",
+                ylab = "Zhang BLUP AA") + 
+  stat_compare_means(comparisons = my_comparisons, method = "t.test", 
+                                        label = "p.signif") + #coord_flip()
+  scale_fill_brewer(palette = "Dark2") + grids(size = 0.5)+ 
+  theme(axis.title.x=element_blank(),
+        axis.text.x=element_blank(),
+        axis.ticks.x=element_blank())
+
+ZhangE = ggboxplot(ds_eaa, x = "tissue", y = "Zhang_ENAAr_sex", fill = "tissue",
+                ylab = "Zhang EN AA") + 
+  stat_compare_means(comparisons = my_comparisons, method = "t.test", 
+                                        label = "p.signif") + #coord_flip()
+  scale_fill_brewer(palette = "Dark2") + grids(size = 0.5)+ 
+  theme(axis.title.x=element_blank(),
+        axis.text.x=element_blank(),
+        axis.ticks.x=element_blank())
+
+EpiTOC = ggboxplot(ds_eaa, x = "tissue", y = "EpiTOCAAr_sex", fill = "tissue",
+                ylab = "EpiTOC AA") + 
+  stat_compare_means(comparisons = my_comparisons, method = "t.test", 
+                                        label = "p.signif") + #coord_flip()
+  scale_fill_brewer(palette = "Dark2") + grids(size = 0.5)+ 
+  theme(axis.title.x=element_blank(),
+        axis.text.x=element_blank(),
+        axis.ticks.x=element_blank())
+
+HypoCl = ggboxplot(ds_eaa, x = "tissue", y = "HypoScoreAAr_sex", fill = "tissue",
+                ylab = "HypoClock AA") + 
+  stat_compare_means(comparisons = my_comparisons, method = "t.test", 
+                                        label = "p.signif") + #coord_flip()
+  scale_fill_brewer(palette = "Dark2") + grids(size = 0.5)+ 
+  theme(axis.title.x=element_blank(),
+        axis.text.x=element_blank(),
+        axis.ticks.x=element_blank())
+
+MiAge = ggboxplot(ds_eaa, x = "tissue", y = "MiAgeAAr_sex", fill = "tissue",
+                ylab = "MiAge AA") + 
+  stat_compare_means(comparisons = my_comparisons, method = "t.test", 
+                                        label = "p.signif") + #coord_flip()
+  scale_fill_brewer(palette = "Dark2") + grids(size = 0.5)+ 
+  theme(axis.title.x=element_blank(),
+        axis.text.x=element_blank(),
+        axis.ticks.x=element_blank())
+```
+
+```{r}
+EAA_plot = ggarrange(Horvath, Hannum,
+          Pheno, SkinBlood,
+          PedBe, Wu,
+          ZhangB, ZhangE, EpiTOC, HypoCl, MiAge + rremove("x.text"), 
+          #labels = c("A", "B", "C"),
+          common.legend = TRUE,
+          ncol = 4, nrow = 3)
+
+EAA_plot
+ggsave(EAA_plot,filename = paste(image_path,"eaa_comp_plot_all_tissues_29aug.png",sep=""), width = 12, height = 9)
+```
+
+#### Boxplot - unadjusted EAAs
+```{r}
+Horvath = ggboxplot(ds_eaa, x = "tissue", y = "HorvathAAr", fill = "tissue",
+                ylab = "HorvathAA") + 
+  stat_compare_means(comparisons = my_comparisons, method = "t.test", 
+                                        label = "p.signif") + #coord_flip()
+  scale_fill_brewer(palette = "Dark2") + grids(size = 0.5)+ 
+  theme(axis.title.x=element_blank(),
+        axis.text.x=element_blank(),
+        axis.ticks.x=element_blank())
+
+Hannum = ggboxplot(ds_eaa, x = "tissue", y = "HannumAAr", fill = "tissue",
+                ylab = "HannumAA") + 
+  stat_compare_means(comparisons = my_comparisons, method = "t.test", 
+                                        label = "p.signif") + #coord_flip()
+  scale_fill_brewer(palette = "Dark2") + grids(size = 0.5)+  
+  theme(axis.title.x=element_blank(),
+        axis.text.x=element_blank(),
+        axis.ticks.x=element_blank())
+
+Pheno = ggboxplot(ds_eaa, x = "tissue", y = "PhenoAAr", fill = "tissue",
+                ylab = "PhenoAA") + 
+  stat_compare_means(comparisons = my_comparisons, method = "t.test", 
+                                        label = "p.signif") + #coord_flip()
+  scale_fill_brewer(palette = "Dark2") + grids(size = 0.5)+ 
+  theme(axis.title.x=element_blank(),
+        axis.text.x=element_blank(),
+        axis.ticks.x=element_blank())
+
+SkinBlood = ggboxplot(ds_eaa, x = "tissue", y = "SkinBloodAAr", fill = "tissue",
+                ylab = "SkinBloodAA") + 
+  stat_compare_means(comparisons = my_comparisons, method = "t.test", 
+                                        label = "p.signif") + #coord_flip()
+  scale_fill_brewer(palette = "Dark2") + grids(size = 0.5)+ 
+  theme(axis.title.x=element_blank(),
+        axis.text.x=element_blank(),
+        axis.ticks.x=element_blank())
+
+PedBe = ggboxplot(ds_eaa, x = "tissue", y = "PedBEAAr", fill = "tissue",
+                ylab = "PedBEAA") + 
+  stat_compare_means(comparisons = my_comparisons, method = "t.test", 
+                                        label = "p.signif") + #coord_flip()
+  scale_fill_brewer(palette = "Dark2") + grids(size = 0.5)+ 
+  theme(axis.title.x=element_blank(),
+        axis.text.x=element_blank(),
+        axis.ticks.x=element_blank())
+
+Wu = ggboxplot(ds_eaa, x = "tissue", y = "WuAAr", fill = "tissue",
+                ylab = "WuAA") + 
+  stat_compare_means(comparisons = my_comparisons, method = "t.test", 
+                                        label = "p.signif") + #coord_flip()
+  scale_fill_brewer(palette = "Dark2") + grids(size = 0.5)+ 
+  theme(axis.title.x=element_blank(),
+        axis.text.x=element_blank(),
+        axis.ticks.x=element_blank())
+
+ZhangB = ggboxplot(ds_eaa, x = "tissue", y = "Zhang_BLUPAAr", fill = "tissue",
+                ylab = "ZhangBLUPAA") + 
+  stat_compare_means(comparisons = my_comparisons, method = "t.test", 
+                                        label = "p.signif") + #coord_flip()
+  scale_fill_brewer(palette = "Dark2") + grids(size = 0.5)+ 
+  theme(axis.title.x=element_blank(),
+        axis.text.x=element_blank(),
+        axis.ticks.x=element_blank())
+
+ZhangE = ggboxplot(ds_eaa, x = "tissue", y = "Zhang_ENAAr", fill = "tissue",
+                ylab = "ZhangENAA") + 
+  stat_compare_means(comparisons = my_comparisons, method = "t.test", 
+                                        label = "p.signif") + #coord_flip()
+  scale_fill_brewer(palette = "Dark2") + grids(size = 0.5)+ 
+  theme(axis.title.x=element_blank(),
+        axis.text.x=element_blank(),
+        axis.ticks.x=element_blank())
+
+EpiTOC = ggboxplot(ds_eaa, x = "tissue", y = "EpiTOCAAr", fill = "tissue",
+                ylab = "EpiTOCAA") + 
+  stat_compare_means(comparisons = my_comparisons, method = "t.test", 
+                                        label = "p.signif") + #coord_flip()
+  scale_fill_brewer(palette = "Dark2") + grids(size = 0.5)+ 
+  theme(axis.title.x=element_blank(),
+        axis.text.x=element_blank(),
+        axis.ticks.x=element_blank())
+
+HypoCl = ggboxplot(ds_eaa, x = "tissue", y = "HypoScoreAAr", fill = "tissue",
+                ylab = "HypoClockAA") + 
+  stat_compare_means(comparisons = my_comparisons, method = "t.test", 
+                                        label = "p.signif") + #coord_flip()
+  scale_fill_brewer(palette = "Dark2") + grids(size = 0.5)+ 
+  theme(axis.title.x=element_blank(),
+        axis.text.x=element_blank(),
+        axis.ticks.x=element_blank())
+
+MiAge = ggboxplot(ds_eaa, x = "tissue", y = "MiAgeAAr", fill = "tissue",
+                ylab = "MiAgeAA") + 
+  stat_compare_means(comparisons = my_comparisons, method = "t.test", 
+                                        label = "p.signif") + #coord_flip()
+  scale_fill_brewer(palette = "Dark2") + grids(size = 0.5)+ 
+  theme(axis.title.x=element_blank(),
+        axis.text.x=element_blank(),
+        axis.ticks.x=element_blank())
+```
+
+```{r}
+EAA_plot_unadj = ggarrange(Horvath, Hannum,
+          Pheno, SkinBlood,
+          PedBe, Wu,
+          ZhangB, ZhangE, EpiTOC, HypoCl, MiAge + rremove("x.text"), 
+          #labels = c("A", "B", "C"),
+          common.legend = TRUE,
+          ncol = 4, nrow = 3)
+EAA_plot_unadj
+ggsave(EAA_plot_unadj,filename = paste(image_path,"eaa_comp_plot_all_unadjusted_19jun.png",sep=""), width = 12, height = 9)
+```
+
+# Dataset II (healthy & normal)
+## Prepare the data
+```{r}
+ds_hn = ds_filtered2[,c(1:64,108,65,67,69,72,74,76,79,81,83:91,111:132)]
+rownames(ds_hn) <- 1:nrow(ds_hn)
+```
+
+```{r}
+# prepare the data
+hn_eaa_list = names(ds_hn)[83:93]
+hn_eaa_adj_list = names(ds_hn)[94:104]
+
+hn_ds_eaa = ds_hn[,c(1:10,65,83:104)]
+hn_ds_long=melt(hn_ds_eaa,measure.vars=names(hn_ds_eaa)[12:33])
+hn_ds_long$clock=as.character(hn_ds_long$variable)
+
+
+hn_ds_long$clock[hn_ds_long$clock=="HorvathAAr" | hn_ds_long$clock=="HorvathAAr_sex"] = "Horvath AA"
+hn_ds_long$clock[hn_ds_long$clock=="HannumAAr" | hn_ds_long$clock=="HannumAAr_sex"] = "Hannum AA"
+hn_ds_long$clock[hn_ds_long$clock=="PhenoAAr" | hn_ds_long$clock=="PhenoAAr_sex"] = "Pheno AA"
+hn_ds_long$clock[hn_ds_long$clock=="SkinBloodAAr" | hn_ds_long$clock=="SkinBloodAAr_sex"] = "SkinBlood AA"
+hn_ds_long$clock[hn_ds_long$clock=="PedBEAAr" | hn_ds_long$clock=="PedBEAAr_sex"] = "PedBE AA"
+hn_ds_long$clock[hn_ds_long$clock=="WuAAr" | hn_ds_long$clock=="WuAAr_sex"] = "Wu AA"
+hn_ds_long$clock[hn_ds_long$clock=="Zhang_BLUPAAr" | hn_ds_long$clock=="Zhang_BLUPAAr_sex"] = "Zhang BLUP AA"
+hn_ds_long$clock[hn_ds_long$clock=="Zhang_ENAAr" | hn_ds_long$clock=="Zhang_ENAAr_sex"] = "Zhang EN AA"
+hn_ds_long$clock[hn_ds_long$clock=="EpiTOCAAr" | hn_ds_long$clock=="EpiTOCAAr_sex"] = "EpiTOC AA"
+hn_ds_long$clock[hn_ds_long$clock=="HypoScoreAAr" | hn_ds_long$clock=="HypoScoreAAr_sex"] = "HypoClock AA"
+hn_ds_long$clock[hn_ds_long$clock=="MiAgeAAr" | hn_ds_long$clock=="MiAgeAAr_sex"] = "MiAge AA"
+
+hn_ds_long$adjustment=as.character(hn_ds_long$variable)
+hn_ds_long$adjustment[hn_ds_long$adjust %in% hn_eaa_list]="unadjusted"
+hn_ds_long$adjustment[hn_ds_long$adjust!="unadjusted"]="adjusted"
+hn_ds_long$clock=as.factor(hn_ds_long$clock)
+```
+
+```{r}
+hn_ds_long_adj = hn_ds_long[which(hn_ds_long$adjustment=="adjusted"),]
+bxp_hn <- list( c("healthy", "normal"))
+
+## 1st and 2nd generation epigenetic clocks
+hn_long_main = hn_ds_long_adj[-which(hn_ds_long_adj$clock=="EpiTOC AA" |
+                                       hn_ds_long_adj$clock=="HypoClock AA" |
+                                       hn_ds_long_adj$clock=="MiAge AA"),]
+hn_long_main$Legend = factor(hn_long_main$tissue, levels=c("healthy", "normal"))
+hn_long_main$clock = factor(hn_long_main$clock, levels =  rev(c("Horvath AA","Hannum AA", "Pheno AA",  "SkinBlood AA", "Wu AA", "PedBE AA", "Zhang BLUP AA", "Zhang EN AA")))
+
+##
+
+## Epigenetic mitotic clocks
+hn_long_main_mc1 = hn_ds_long_adj[which(hn_ds_long_adj$clock=="EpiTOC AA" |
+                                       hn_ds_long_adj$clock=="HypoClock AA"),]
+hn_long_main_mc1$Legend = factor(hn_long_main_mc1$tissue, levels=c("healthy", "normal"))
+hn_long_main_mc1$clock = factor(hn_long_main_mc1$clock, levels =  rev(c("EpiTOC AA","HypoClock AA")))
+
+hn_long_main_mc2 = hn_ds_long_adj[which(hn_ds_long_adj$clock=="MiAge AA"),]
+hn_long_main_mc2$Legend = factor(hn_long_main_mc2$tissue, levels=c("healthy", "normal"))
+hn_long_main_mc2$clock = factor(hn_long_main_mc2$clock, levels =  rev(c("MiAge AA")))
+
+##
+```
+
+## Boxplot of EAA between tissues
+### Main text
+#### Boxplots
+```{r}
+## boxplot for 1st and 2nd generation EAAs
+bxp_main1 = ggboxplot(hn_long_main, 
+                x = "clock", y = "value", fill = "Legend", 
+                 palette = "Dark2")#, facet.by = "adjust")
+
+ttest_main1 <- hn_long_main %>%
+    group_by(clock) %>%
+    t_test(value ~ Legend, comparisons = bxp_hn) %>%
+    add_significance("p")
+ttest_main1  <- ttest_main1  %>%
+  add_xy_position(x = "clock", dodge = 0.8, step.increase = 0.05)
+
+bxp_fin_main1 = bxp_main1 + stat_pvalue_manual(
+    ttest_main1, label = "p.signif", tip.length = 0.01,
+    coord.flip = TRUE, 
+    step.group.by = "clock", 
+    hjust = 0.5, angle = 270, step.increase = 0, hide.ns = FALSE,
+    ) + coord_flip() + fill_hn + grids(size = 0.9) + xlab("EAA")
+bxp_fin_main1
+#####
+
+## boxplot for epigenetic mitotic AAs
+bxp_main2 = ggboxplot(hn_long_main_mc1, 
+                x = "clock", y = "value", fill = "Legend", 
+                 palette = "Dark2")#, facet.by = "adjust")
+
+ttest_main2 <- hn_long_main_mc1 %>%
+    group_by(clock) %>%
+    t_test(value ~ Legend, comparisons = bxp_hn) %>%
+    add_significance("p")
+ttest_main2  <- ttest_main2  %>%
+  add_xy_position(x = "clock", dodge = 0.8, step.increase = 0.05)
+
+bxp_fin_main2 = bxp_main2 + stat_pvalue_manual(
+    ttest_main2, label = "p.signif", tip.length = 0.01,
+    coord.flip = TRUE, 
+    step.group.by = "clock", 
+    hjust = 0.5, angle = 270, step.increase = 0, hide.ns = FALSE,
+    ) + coord_flip() + fill_hn + grids(size = 0.9) + xlab("EAA")
+bxp_fin_main2
+
+##
+bxp_main3 = ggboxplot(hn_long_main_mc2, 
+                x = "clock", y = "value", fill = "Legend", 
+                 palette = "Dark2")#, facet.by = "adjust")
+
+ttest_main3 <- hn_long_main_mc2 %>%
+    group_by(clock) %>%
+    t_test(value ~ Legend, comparisons = bxp_hn) %>%
+    add_significance("p")
+ttest_main3  <- ttest_main3  %>%
+  add_xy_position(x = "clock", dodge = 0.8, step.increase = 0.05)
+
+bxp_fin_main3 = bxp_main3 + stat_pvalue_manual(
+    ttest_main3, label = "p.signif", tip.length = 0.01,
+    coord.flip = TRUE, 
+    step.group.by = "clock", 
+    hjust = 0.5, angle = 270, step.increase = 0, hide.ns = FALSE,
+    ) + coord_flip() + fill_hn + grids(size = 0.9) + xlab("EAA")
+bxp_fin_main3
+#####
+
+#### Epigenetic mitotic AA boxplots -- combined
+bxp_03_main = ggarrange(bxp_fin_main2, bxp_fin_main3,
+                        nrow=2, common.legend = TRUE)
+bxp_03_main
+
+```
+#### Density plots
+```{r}
+eaa_dens_hor <- ggplot(hn_ds_long_adj[which(hn_ds_long_adj$clock=="Horvath AA"),], 
+                   aes(x=value, fill = tissue)) + 
+  geom_density(alpha = 0.7) +
+  fill_hn +
+  theme_bw() +
+  xlab("Horvath AA")
+eaa_dens_hor
+
+eaa_dens_han <- ggplot(hn_ds_long_adj[which(hn_ds_long_adj$clock=="Hannum AA"),], 
+                   aes(x=value, fill = tissue)) + 
+  geom_density(alpha = 0.7) +
+  fill_hn +
+  theme_bw() +
+  xlab("Hannum AA")
+
+eaa_dens_phe <- ggplot(hn_ds_long_adj[which(hn_ds_long_adj$clock=="Pheno AA"),], 
+                   aes(x=value, fill = tissue)) + 
+  geom_density(alpha = 0.7) +
+  fill_hn +
+  theme_bw() +
+  xlab("Pheno AA")
+
+eaa_dens_sb <- ggplot(hn_ds_long_adj[which(hn_ds_long_adj$clock=="SkinBlood AA"),], 
+                   aes(x=value, fill = tissue)) + 
+  geom_density(alpha = 0.7) +
+  fill_hn +
+  theme_bw() +
+  xlab("SkinBlood AA")
+
+eaa_dens_pb <- ggplot(hn_ds_long_adj[which(hn_ds_long_adj$clock=="PedBE AA"),], 
+                   aes(x=value, fill = tissue)) + 
+  geom_density(alpha = 0.7) +
+  fill_hn +
+  theme_bw() +
+  xlab("PedBE AA")
+
+eaa_dens_wu <- ggplot(hn_ds_long_adj[which(hn_ds_long_adj$clock=="Wu AA"),], 
+                   aes(x=value, fill = tissue)) + 
+  geom_density(alpha = 0.7) +
+  fill_hn +
+  theme_bw() +
+  xlab("Wu AA")
+
+eaa_dens_zb <- ggplot(hn_ds_long_adj[which(hn_ds_long_adj$clock=="Zhang BLUP AA"),], 
+                   aes(x=value, fill = tissue)) + 
+  geom_density(alpha = 0.7) +
+  fill_hn +
+  theme_bw() +
+  xlab("Zhang BLUP AA")
+
+eaa_dens_ze <- ggplot(hn_ds_long_adj[which(hn_ds_long_adj$clock=="Zhang EN AA"),], 
+                   aes(x=value, fill = tissue)) + 
+  geom_density(alpha = 0.7) +
+  fill_hn +
+  theme_bw() +
+  xlab("Zhang EN AA")
+
+eaa_dens_epi <- ggplot(hn_ds_long_adj[which(hn_ds_long_adj$clock=="EpiTOC AA"),], 
+                   aes(x=value, fill = tissue)) + 
+  geom_density(alpha = 0.7) +
+  fill_hn +
+  theme_bw() +
+  xlab("EpiTOC AA")
+
+eaa_dens_hc <- ggplot(hn_ds_long_adj[which(hn_ds_long_adj$clock=="HypoClock AA"),], 
+                   aes(x=value, fill = tissue)) + 
+  geom_density(alpha = 0.7) +
+  fill_hn +
+  theme_bw() +
+  xlab("HypoClock AA")
+
+eaa_dens_mi <- ggplot(hn_ds_long_adj[which(hn_ds_long_adj$clock=="MiAge AA"),], 
+                   aes(x=value, fill = tissue)) + 
+  geom_density(alpha = 0.7) +
+  fill_hn +
+  theme_bw() +
+  xlab("MiAge AA")
+
+### Figure for main text
+hn_eaa_dens_main = ggarrange(eaa_dens_hor, eaa_dens_han, eaa_dens_phe,
+                               eaa_dens_sb,eaa_dens_pb,
+                    eaa_dens_wu, eaa_dens_epi, eaa_dens_hc, 
+                    nrow = 4, ncol = 2, common.legend = TRUE)
+
+hn_eaa_dens_main
+
+
+### Figure for supplementary material
+eaa_dens_all = ggarrange(eaa_dens_hor, eaa_dens_han, eaa_dens_phe,
+                         eaa_dens_sb, eaa_dens_pb,
+                         eaa_dens_wu, eaa_dens_zb,
+                    eaa_dens_ze,
+                    eaa_dens_epi, eaa_dens_hc,  eaa_dens_mi,
+                    nrow = 3, ncol = 4, common.legend = TRUE)
+
+eaa_dens_all
+ggsave(eaa_dens_all,filename = paste(image_path,"ds2_eaa_dens_supp_29aug.png",sep = ""), height = 7, width = 12,units = "in")
+```
+
+#### Combined
+```{r}
+pic_3 = ggarrange(bxp_fin_main1,
+          ggarrange(bxp_03_main, hn_eaa_dens_main, ncol = 1, labels = c("B", "C")),
+          nrow = 1, 
+          labels = "A"
+          ) 
+pic_3
+ggsave(pic_3,filename = paste(image_path,"pic_3_main.png",sep=""), width = 16, height = 18)
+```
+
+### Supplementary
+#### Boxplot - unadjusted EAAs
+```{r}
+ds_hn_eaa = ds_hn[,c(1,3,4,6:10,83:104)]
+ds_hn_eaa$tissue = factor(ds_hn_eaa$tissue)
+my_comparisons = list(c("healthy", "normal"))
+```
+
+```{r}
+Horvath = ggboxplot(ds_hn_eaa, x = "tissue", y = "HorvathAAr", fill = "tissue",
+                ylab = "HorvathAA") + 
+  stat_compare_means(comparisons = my_comparisons, method = "t.test", 
+                                        label = "p.signif") + #coord_flip()
+  scale_fill_brewer(palette = "Dark2") + grids(size = 0.5)+ 
+  theme(axis.title.x=element_blank(),
+        axis.text.x=element_blank(),
+        axis.ticks.x=element_blank())
+
+Hannum = ggboxplot(ds_hn_eaa, x = "tissue", y = "HannumAAr", fill = "tissue",
+                ylab = "HannumAA") + 
+  stat_compare_means(comparisons = my_comparisons, method = "t.test", 
+                                        label = "p.signif") + #coord_flip()
+  scale_fill_brewer(palette = "Dark2") + grids(size = 0.5)+ 
+  theme(axis.title.x=element_blank(),
+        axis.text.x=element_blank(),
+        axis.ticks.x=element_blank())
+
+Pheno = ggboxplot(ds_hn_eaa, x = "tissue", y = "PhenoAAr", fill = "tissue",
+                ylab = "PhenoAA") + 
+  stat_compare_means(comparisons = my_comparisons, method = "t.test", 
+                                        label = "p.signif") + #coord_flip()
+  scale_fill_brewer(palette = "Dark2") + grids(size = 0.5)+ 
+  theme(axis.title.x=element_blank(),
+        axis.text.x=element_blank(),
+        axis.ticks.x=element_blank())
+
+SkinBlood = ggboxplot(ds_hn_eaa, x = "tissue", y = "SkinBloodAAr", fill = "tissue",
+                ylab = "SkinBloodAA") + 
+  stat_compare_means(comparisons = my_comparisons, method = "t.test", 
+                                        label = "p.signif") + #coord_flip()
+  scale_fill_brewer(palette = "Dark2") + grids(size = 0.5)+ 
+  theme(axis.title.x=element_blank(),
+        axis.text.x=element_blank(),
+        axis.ticks.x=element_blank())
+
+PedBe = ggboxplot(ds_hn_eaa, x = "tissue", y = "PedBEAAr", fill = "tissue",
+                ylab = "PedBEAA") + 
+  stat_compare_means(comparisons = my_comparisons, method = "t.test", 
+                                        label = "p.signif") + #coord_flip()
+  scale_fill_brewer(palette = "Dark2") + grids(size = 0.5)+ 
+  theme(axis.title.x=element_blank(),
+        axis.text.x=element_blank(),
+        axis.ticks.x=element_blank())
+
+Wu = ggboxplot(ds_hn_eaa, x = "tissue", y = "WuAAr", fill = "tissue",
+                ylab = "WuAA") + 
+  stat_compare_means(comparisons = my_comparisons, method = "t.test", 
+                                        label = "p.signif") + #coord_flip()
+  scale_fill_brewer(palette = "Dark2") + grids(size = 0.5)+ 
+  theme(axis.title.x=element_blank(),
+        axis.text.x=element_blank(),
+        axis.ticks.x=element_blank())
+
+ZhangB = ggboxplot(ds_hn_eaa, x = "tissue", y = "Zhang_BLUPAAr", fill = "tissue",
+                ylab = "ZhangBLUPAA") + 
+  stat_compare_means(comparisons = my_comparisons, method = "t.test", 
+                                        label = "p.signif") + #coord_flip()
+  scale_fill_brewer(palette = "Dark2") + grids(size = 0.5)+ 
+  theme(axis.title.x=element_blank(),
+        axis.text.x=element_blank(),
+        axis.ticks.x=element_blank())
+
+ZhangE = ggboxplot(ds_hn_eaa, x = "tissue", y = "Zhang_ENAAr", fill = "tissue",
+                ylab = "ZhangENAA") + 
+  stat_compare_means(comparisons = my_comparisons, method = "t.test", 
+                                        label = "p.signif") + #coord_flip()
+  scale_fill_brewer(palette = "Dark2") + grids(size = 0.5)+ 
+  theme(axis.title.x=element_blank(),
+        axis.text.x=element_blank(),
+        axis.ticks.x=element_blank())
+
+EpiTOC = ggboxplot(ds_hn_eaa, x = "tissue", y = "EpiTOCAAr", fill = "tissue",
+                ylab = "EpiTOCAA") + 
+  stat_compare_means(comparisons = my_comparisons, method = "t.test", 
+                                        label = "p.signif") + #coord_flip()
+  scale_fill_brewer(palette = "Dark2") + grids(size = 0.5)+ 
+  theme(axis.title.x=element_blank(),
+        axis.text.x=element_blank(),
+        axis.ticks.x=element_blank())
+
+HypoCl = ggboxplot(ds_hn_eaa, x = "tissue", y = "HypoScoreAAr", fill = "tissue",
+                ylab = "HypoClockAA") + 
+  stat_compare_means(comparisons = my_comparisons, method = "t.test", 
+                                        label = "p.signif") + #coord_flip()
+  scale_fill_brewer(palette = "Dark2") + grids(size = 0.5)+ 
+  theme(axis.title.x=element_blank(),
+        axis.text.x=element_blank(),
+        axis.ticks.x=element_blank())
+
+MiAge = ggboxplot(ds_hn_eaa, x = "tissue", y = "MiAgeAAr", fill = "tissue",
+                ylab = "MiAgeAA") + 
+  stat_compare_means(comparisons = my_comparisons, method = "t.test", 
+                                        label = "p.signif") + #coord_flip()
+  scale_fill_brewer(palette = "Dark2") + grids(size = 0.5)+ 
+  theme(axis.title.x=element_blank(),
+        axis.text.x=element_blank(),
+        axis.ticks.x=element_blank())
+```
+
+```{r}
+EAA_plot_unadj = ggarrange(Horvath, Hannum,
+          Pheno, SkinBlood,
+          PedBe, Wu,
+          ZhangB, ZhangE, EpiTOC, HypoCl, MiAge + rremove("x.text"), 
+          #labels = c("A", "B", "C"),
+          common.legend = TRUE,
+          ncol = 4, nrow = 3)
+
+EAA_plot_unadj
+ggsave(EAA_plot_unadj,filename = paste(image_path,"eaa_comp_plot_hn_unadjusted_19jun.png",sep=""), width = 12, height = 9)
+```
+
