@@ -6,4 +6,4 @@ In particular, the parts of the code are dedicated to the epigenetic age acceler
 
 The data file contains calculated epigenetic age and clinical information obtained from the open access repositories (NCBI GEO and ArrayExpress).
 
-The folder association_analyses_plots contain R code used to produce the plots for the associations between EA/EAA and CRC status together with corresponding data files in .RData format.
+The folder association_analyses_plots contains R scripts to calculate EAAs for association analyses using the methods described in the manuscript, and to produce the plots for the associations between EA/EAA and CRC status together with corresponding data files in .RData format.
