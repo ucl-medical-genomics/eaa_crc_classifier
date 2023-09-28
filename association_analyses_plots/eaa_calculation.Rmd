@@ -1,0 +1,380 @@
+---
+title: "CRC-EAA residual"
+output: html_notebook
+---
+
+This is the script for CRC-EAA analyses dedicated to the calculation of the EAA as the residuals from regressing 
+
+## Preliminary steps and EAA Calculation
+### Loading libraries and establishing paths
+
+```{r}
+setwd("~/your_path/")
+```
+
+```{r}
+library(data.table)
+```
+
+### EAAs in the entire dataset (H+N+T)
+```{r}
+ds = as.data.frame(fread("./master_df_final.csv"))
+ds
+```
+
+Dealing with outliers:
+```{r}
+clocks = c("Horvath","Hannum","Pheno","SkinBlood","PedBE","Wu","Zhang_BLUP","Zhang_EN","EpiTOC","HypoScore","MiAge")
+age_diff = c("HorvathAAd","HannumAAd","PhenoAAd","SkinBloodAAd","PedBEAAd","WuAAd","Zhang_BLUPAAd","Zhang_ENAAd")
+outliers_ds = ds[,c("sampleID","patientID",age_diff)]
+clock_means = colMeans(ds[age_diff])
+clock_sds = apply(ds[,age_diff],2,sd)
+n_range_min = clock_means-3*clock_sds
+n_range_max = clock_means+3*clock_sds
+```
+
+
+```{r}
+for(a in age_diff){outliers_ds[a] = (outliers_ds[a]<n_range_max[a] & outliers_ds[a]>n_range_min[a])}
+outliers_count = rowSums(!(outliers_ds[,-c(1,2)]))
+outliers_count_clock = colSums(!(outliers_ds[,-c(1,2)]))
+table(outliers_count)
+outliers_count_clock
+```
+
+We remove all the samples, which are outliers in 2+ clocks
+```{r}
+outlier_samples = outliers_ds$sampleID[outliers_count>=2]
+outlier_samples
+outlier_samples_all = outliers_ds$sampleID[outliers_count>0]
+outlier_samples_all
+ds_filtered = ds[-which(ds$sampleID %in% outlier_samples),]
+```
+
+Calculating residuals:
+
+```{r}
+res_ds = as.data.frame(ds_filtered[,c("sampleID","patientID","age","sex", "tissue",clocks, "datasetID")])
+#########################
+### no sex included
+########################
+lmHorvath = lm(Horvath ~ age, res_ds[res_ds$tissue == "healthy",])
+res_ds$HorvathAAr = res_ds$Horvath - predict(lmHorvath,res_ds)
+res_ds$HorvathAAr = residuals(lmer(HorvathAAr ~ (1|patientID) + (1|datasetID),res_ds))
+
+lmHannum = lm(Hannum ~ age, res_ds[res_ds$tissue == "healthy",])
+res_ds$HannumAAr = res_ds$Hannum - predict(lmHannum,res_ds)
+res_ds$HannumAAr = residuals(lmer(HannumAAr ~ (1|patientID) + (1|datasetID),res_ds))
+
+lmPheno = lm(Pheno ~ age, res_ds[res_ds$tissue == "healthy",])
+res_ds$PhenoAAr = res_ds$Pheno - predict(lmPheno,res_ds)
+res_ds$PhenoAAr = residuals(lmer(PhenoAAr ~ (1|patientID) + (1|datasetID),res_ds))
+
+lmSkinBlood = lm(SkinBlood ~ age, res_ds[res_ds$tissue == "healthy",])
+res_ds$SkinBloodAAr = res_ds$SkinBlood - predict(lmSkinBlood,res_ds)
+res_ds$SkinBloodAAr = residuals(lmer(SkinBloodAAr ~ (1|patientID) + (1|datasetID),res_ds))
+
+lmPedBE = lm(PedBE ~ age, res_ds[res_ds$tissue == "healthy",])
+res_ds$PedBEAAr = res_ds$PedBE - predict(lmPedBE,res_ds)
+res_ds$PedBEAAr = residuals(lmer(PedBEAAr ~ (1|patientID) + (1|datasetID),res_ds))
+
+lmWu = lm(Wu ~ age, res_ds[res_ds$tissue == "healthy",])
+res_ds$WuAAr = res_ds$Wu - predict(lmWu,res_ds)
+res_ds$WuAAr = residuals(lmer(WuAAr ~ (1|patientID) + (1|datasetID),res_ds))
+
+lmZhang_BLUP = lm(Zhang_BLUP ~ age, res_ds[res_ds$tissue == "healthy",])
+res_ds$Zhang_BLUPAAr = res_ds$Zhang_BLUP - predict(lmZhang_BLUP,res_ds)
+res_ds$Zhang_BLUPAAr = residuals(lmer(Zhang_BLUPAAr ~ (1|patientID) + (1|datasetID),res_ds))
+
+lmZhang_EN = lm(Zhang_EN ~ age, res_ds[res_ds$tissue == "healthy",])
+res_ds$Zhang_ENAAr = res_ds$Zhang_EN - predict(lmZhang_EN,res_ds)
+res_ds$Zhang_ENAAr = residuals(lmer(Zhang_ENAAr ~ (1|patientID) + (1|datasetID),res_ds))
+
+lmEpiTOC = lm(EpiTOC ~ age, res_ds[res_ds$tissue == "healthy",])
+res_ds$EpiTOCAAr = res_ds$EpiTOC - predict(lmEpiTOC,res_ds)
+res_ds$EpiTOCAAr = residuals(lmer(EpiTOCAAr ~ (1|patientID) + (1|datasetID),res_ds))
+
+lmHypoScore = lm(HypoScore ~ age, res_ds[res_ds$tissue == "healthy",])
+res_ds$HypoScoreAAr = res_ds$HypoScore - predict(lmHypoScore,res_ds)
+res_ds$HypoScoreAAr = residuals(lmer(HypoScoreAAr ~ (1|patientID) + (1|datasetID),res_ds))
+
+lmMiAge = lm(MiAge ~ age, res_ds[res_ds$tissue == "healthy",])
+res_ds$MiAgeAAr = res_ds$MiAge - predict(lmMiAge,res_ds)
+res_ds$MiAgeAAr = residuals(lmer(MiAgeAAr ~ (1|patientID) + (1|datasetID),res_ds))
+
+#########################################
+### sex included
+###########################################
+lmHorvath2 = lm(Horvath ~ age + sex, res_ds[res_ds$tissue == "healthy",])
+res_ds$HorvathAAr_sex = res_ds$Horvath - predict(lmHorvath2,res_ds)
+res_ds$HorvathAAr_sex = residuals(lmer(HorvathAAr_sex ~ (1|patientID) + (1|datasetID),res_ds))
+
+lmHannum2 = lm(Hannum ~ age + sex, res_ds[res_ds$tissue == "healthy",])
+res_ds$HannumAAr_sex = res_ds$Hannum - predict(lmHannum2,res_ds)
+res_ds$HannumAAr_sex = residuals(lmer(HannumAAr_sex ~ (1|patientID) + (1|datasetID),res_ds))
+
+lmPheno2 = lm(Pheno ~ age + sex, res_ds[res_ds$tissue == "healthy",])
+res_ds$PhenoAAr_sex = res_ds$Pheno - predict(lmPheno2,res_ds)
+res_ds$PhenoAAr_sex = residuals(lmer(PhenoAAr_sex ~ (1|patientID) + (1|datasetID),res_ds))
+
+lmSkinBlood2 = lm(SkinBlood ~ age + sex, res_ds[res_ds$tissue == "healthy",])
+res_ds$SkinBloodAAr_sex = res_ds$SkinBlood - predict(lmSkinBlood2,res_ds)
+res_ds$SkinBloodAAr_sex = residuals(lmer(SkinBloodAAr_sex ~ (1|patientID) + (1|datasetID),res_ds))
+
+lmPedBE2 = lm(PedBE ~ age + sex, res_ds[res_ds$tissue == "healthy",])
+res_ds$PedBEAAr_sex = res_ds$PedBE - predict(lmPedBE2,res_ds)
+res_ds$PedBEAAr_sex = residuals(lmer(PedBEAAr_sex ~ (1|patientID) + (1|datasetID),res_ds))
+
+lmWu2 = lm(Wu ~ age + sex, res_ds[res_ds$tissue == "healthy",])
+res_ds$WuAAr_sex = res_ds$Wu - predict(lmWu2,res_ds)
+res_ds$WuAAr_sex = residuals(lmer(WuAAr_sex ~ (1|patientID) + (1|datasetID),res_ds))
+
+lmZhang_BLUP2 = lm(Zhang_BLUP ~ age + sex, res_ds[res_ds$tissue == "healthy",])
+res_ds$Zhang_BLUPAAr_sex = res_ds$Zhang_BLUP - predict(lmZhang_BLUP2,res_ds)
+res_ds$Zhang_BLUPAAr_sex = residuals(lmer(Zhang_BLUPAAr_sex ~ (1|patientID) + (1|datasetID),res_ds))
+
+lmZhang_EN2 = lm(Zhang_EN ~ age + sex, res_ds[res_ds$tissue == "healthy",])
+res_ds$Zhang_ENAAr_sex = res_ds$Zhang_EN - predict(lmZhang_EN2,res_ds)
+res_ds$Zhang_ENAAr_sex = residuals(lmer(Zhang_ENAAr_sex ~ (1|patientID) + (1|datasetID),res_ds))
+
+lmEpiTOC2 = lm(EpiTOC ~ age + sex, res_ds[res_ds$tissue == "healthy",])
+res_ds$EpiTOCAAr_sex = res_ds$EpiTOC - predict(lmEpiTOC2,res_ds)
+res_ds$EpiTOCAAr_sex = residuals(lmer(EpiTOCAAr_sex ~ (1|patientID) + (1|datasetID),res_ds))
+
+lmHypoScore2 = lm(HypoScore ~ age + sex, res_ds[res_ds$tissue == "healthy",])
+res_ds$HypoScoreAAr_sex = res_ds$HypoScore - predict(lmHypoScore2,res_ds)
+res_ds$HypoScoreAAr_sex = residuals(lmer(HypoScoreAAr_sex ~ (1|patientID) + (1|datasetID),res_ds))
+
+lmMiAge2 = lm(MiAge ~ age + sex, res_ds[res_ds$tissue == "healthy",])
+res_ds$MiAgeAAr_sex = res_ds$MiAge - predict(lmMiAge2,res_ds)
+res_ds$MiAgeAAr_sex = residuals(lmer(MiAgeAAr_sex ~ (1|patientID) + (1|datasetID),res_ds))
+
+
+```
+
+
+
+
+```{r}
+ds_filtered = cbind(ds_filtered,res_ds[,18:39])
+```
+
+```{r}
+lm1_coef = rbind(
+c(summary(lmHorvath)$coefficients[1,],summary(lmHorvath)$coefficients[2,]),
+c(summary(lmHannum)$coefficients[1,],summary(lmHannum)$coefficients[2,]),
+c(summary(lmPheno)$coefficients[1,],summary(lmPheno)$coefficients[2,]),
+c(summary(lmSkinBlood)$coefficients[1,],summary(lmSkinBlood)$coefficients[2,]),
+c(summary(lmPedBE)$coefficients[1,],summary(lmPedBE)$coefficients[2,]),
+c(summary(lmWu)$coefficients[1,],summary(lmWu)$coefficients[2,]),
+c(summary(lmZhang_BLUP)$coefficients[1,],summary(lmZhang_BLUP)$coefficients[2,]),
+c(summary(lmZhang_EN)$coefficients[1,],summary(lmZhang_EN)$coefficients[2,]),
+c(summary(lmEpiTOC)$coefficients[1,],summary(lmEpiTOC)$coefficients[2,]),
+c(summary(lmHypoScore)$coefficients[1,],summary(lmHypoScore)$coefficients[2,]),
+c(summary(lmMiAge)$coefficients[1,],summary(lmMiAge)$coefficients[2,]))
+lm1_coef = cbind(clocks,lm1_coef)
+
+
+lm1sex_coef = rbind(
+c(summary(lmHorvath2)$coefficients[1,],summary(lmHorvath2)$coefficients[2,],summary(lmHorvath2)$coefficients[3,]),
+c(summary(lmHannum2)$coefficients[1,],summary(lmHannum2)$coefficients[2,],summary(lmHannum2)$coefficients[3,]),
+c(summary(lmPheno2)$coefficients[1,],summary(lmPheno2)$coefficients[2,],summary(lmPheno2)$coefficients[3,]),
+c(summary(lmSkinBlood2)$coefficients[1,],summary(lmSkinBlood2)$coefficients[2,],summary(lmSkinBlood2)$coefficients[3,]),
+c(summary(lmPedBE2)$coefficients[1,],summary(lmPedBE2)$coefficients[2,],summary(lmPedBE2)$coefficients[3,]),
+c(summary(lmWu2)$coefficients[1,],summary(lmWu2)$coefficients[2,],summary(lmWu2)$coefficients[3,]),
+c(summary(lmZhang_BLUP2)$coefficients[1,],summary(lmZhang_BLUP2)$coefficients[2,],summary(lmZhang_BLUP2)$coefficients[3,]),
+c(summary(lmZhang_EN2)$coefficients[1,],summary(lmZhang_EN2)$coefficients[2,],summary(lmZhang_EN2)$coefficients[3,]),
+c(summary(lmEpiTOC2)$coefficients[1,],summary(lmEpiTOC2)$coefficients[2,],summary(lmEpiTOC2)$coefficients[3,]),
+c(summary(lmHypoScore2)$coefficients[1,],summary(lmHypoScore2)$coefficients[2,],summary(lmHypoScore2)$coefficients[3,]),
+c(summary(lmMiAge2)$coefficients[1,],summary(lmMiAge2)$coefficients[2,],summary(lmMiAge2)$coefficients[3,]))
+lm1sex_coef = cbind(clocks,lm1sex_coef)
+fwrite(as.data.frame(lm1_coef), "./lm1_coefficients_tnh.csv")
+fwrite(as.data.frame(lm1sex_coef), "./lm1sex_coefficients_tnh.csv")
+```
+
+
+
+
+### EAAs in the dataset without tumours (H+N only)
+```{r}
+ds2 = as.data.frame(fread("./master_df_final.csv"))
+ds2 = ds2[-which(ds2$tissue %in% c("tumour","adenoma")),]
+ds2
+```
+
+Dealing with outliers:
+```{r}
+clocks = c("Horvath","Hannum","Pheno","SkinBlood","PedBE","Wu","Zhang_BLUP","Zhang_EN","EpiTOC","HypoScore","MiAge")
+age_diff = c("HorvathAAd","HannumAAd","PhenoAAd","SkinBloodAAd","PedBEAAd","WuAAd","Zhang_BLUPAAd","Zhang_ENAAd")
+outliers_ds2 = ds2[,c("sampleID","patientID",age_diff)]
+clock_means = colMeans(ds2[age_diff])
+clock_sds = apply(ds2[,age_diff],2,sd)
+n_range_min = clock_means-3*clock_sds
+n_range_max = clock_means+3*clock_sds
+
+```
+
+
+```{r}
+for(a in age_diff){outliers_ds2[a] = (outliers_ds2[a]<n_range_max[a] & outliers_ds2[a]>n_range_min[a])}
+outliers_count = rowSums(!(outliers_ds2[,-c(1,2)]))
+outliers_count_clock = colSums(!(outliers_ds2[,-c(1,2)]))
+table(outliers_count)
+outliers_count_clock
+```
+
+We remove all the samples, which are outliers in 2+ clocks
+```{r}
+outlier_samples = outliers_ds$sampleID[outliers_count>=2]
+outlier_samples
+ds_filtered2 = ds2[-which(ds$sampleID %in% outlier_samples),]
+```
+
+Calculating residuals:
+
+```{r}
+res_ds2 = as.data.frame(ds_filtered2[,c("sampleID","patientID","age","sex", "tissue",clocks, "datasetID")])
+#########################
+### no sex included
+########################
+lmHorvath = lm(Horvath ~ age, res_ds2[res_ds2$tissue == "healthy",])
+res_ds2$HorvathAAr = res_ds2$Horvath - predict(lmHorvath,res_ds2)
+res_ds2$HorvathAAr = residuals(lmer(HorvathAAr ~ (1|patientID) + (1|datasetID),res_ds2))
+
+lmHannum = lm(Hannum ~ age, res_ds2[res_ds2$tissue == "healthy",])
+res_ds2$HannumAAr = res_ds2$Hannum - predict(lmHannum,res_ds2)
+res_ds2$HannumAAr = residuals(lmer(HannumAAr ~ (1|patientID) + (1|datasetID),res_ds2))
+
+lmPheno = lm(Pheno ~ age, res_ds2[res_ds2$tissue == "healthy",])
+res_ds2$PhenoAAr = res_ds2$Pheno - predict(lmPheno,res_ds2)
+res_ds2$PhenoAAr = residuals(lmer(PhenoAAr ~ (1|patientID) + (1|datasetID),res_ds2))
+
+lmSkinBlood = lm(SkinBlood ~ age, res_ds2[res_ds2$tissue == "healthy",])
+res_ds2$SkinBloodAAr = res_ds2$SkinBlood - predict(lmSkinBlood,res_ds2)
+res_ds2$SkinBloodAAr = residuals(lmer(SkinBloodAAr ~ (1|patientID) + (1|datasetID),res_ds2))
+
+lmPedBE = lm(PedBE ~ age, res_ds2[res_ds2$tissue == "healthy",])
+res_ds2$PedBEAAr = res_ds2$PedBE - predict(lmPedBE,res_ds2)
+res_ds2$PedBEAAr = residuals(lmer(PedBEAAr ~ (1|patientID) + (1|datasetID),res_ds2))
+
+lmWu = lm(Wu ~ age, res_ds2[res_ds2$tissue == "healthy",])
+res_ds2$WuAAr = res_ds2$Wu - predict(lmWu,res_ds2)
+res_ds2$WuAAr = residuals(lmer(WuAAr ~ (1|patientID) + (1|datasetID),res_ds2))
+
+lmZhang_BLUP = lm(Zhang_BLUP ~ age, res_ds2[res_ds2$tissue == "healthy",])
+res_ds2$Zhang_BLUPAAr = res_ds2$Zhang_BLUP - predict(lmZhang_BLUP,res_ds2)
+res_ds2$Zhang_BLUPAAr = residuals(lmer(Zhang_BLUPAAr ~ (1|patientID) + (1|datasetID),res_ds2))
+
+lmZhang_EN = lm(Zhang_EN ~ age, res_ds2[res_ds2$tissue == "healthy",])
+res_ds2$Zhang_ENAAr = res_ds2$Zhang_EN - predict(lmZhang_EN,res_ds2)
+res_ds2$Zhang_ENAAr = residuals(lmer(Zhang_ENAAr ~ (1|patientID) + (1|datasetID),res_ds2))
+
+lmEpiTOC = lm(EpiTOC ~ age, res_ds2[res_ds2$tissue == "healthy",])
+res_ds2$EpiTOCAAr = res_ds2$EpiTOC - predict(lmEpiTOC,res_ds2)
+res_ds2$EpiTOCAAr = residuals(lmer(EpiTOCAAr ~ (1|patientID) + (1|datasetID),res_ds2))
+
+lmHypoScore = lm(HypoScore ~ age, res_ds2[res_ds2$tissue == "healthy",])
+res_ds2$HypoScoreAAr = res_ds2$HypoScore - predict(lmHypoScore,res_ds2)
+res_ds2$HypoScoreAAr = residuals(lmer(HypoScoreAAr ~ (1|patientID) + (1|datasetID),res_ds2))
+
+lmMiAge = lm(MiAge ~ age, res_ds2[res_ds2$tissue == "healthy",])
+res_ds2$MiAgeAAr = res_ds2$MiAge - predict(lmMiAge,res_ds2)
+res_ds2$MiAgeAAr = residuals(lmer(MiAgeAAr ~ (1|patientID) + (1|datasetID),res_ds2))
+
+#########################################
+### sex included
+###########################################
+lmHorvath2 = lm(Horvath ~ age + sex, res_ds2[res_ds2$tissue == "healthy",])
+res_ds2$HorvathAAr_sex = res_ds2$Horvath - predict(lmHorvath2,res_ds2)
+res_ds2$HorvathAAr_sex = residuals(lmer(HorvathAAr_sex ~ (1|patientID) + (1|datasetID),res_ds2))
+
+lmHannum2 = lm(Hannum ~ age + sex, res_ds2[res_ds2$tissue == "healthy",])
+res_ds2$HannumAAr_sex = res_ds2$Hannum - predict(lmHannum2,res_ds2)
+res_ds2$HannumAAr_sex = residuals(lmer(HannumAAr_sex ~ (1|patientID) + (1|datasetID),res_ds2))
+
+lmPheno2 = lm(Pheno ~ age + sex, res_ds2[res_ds2$tissue == "healthy",])
+res_ds2$PhenoAAr_sex = res_ds2$Pheno - predict(lmPheno2,res_ds2)
+res_ds2$PhenoAAr_sex = residuals(lmer(PhenoAAr_sex ~ (1|patientID) + (1|datasetID),res_ds2))
+
+lmSkinBlood2 = lm(SkinBlood ~ age + sex, res_ds2[res_ds2$tissue == "healthy",])
+res_ds2$SkinBloodAAr_sex = res_ds2$SkinBlood - predict(lmSkinBlood2,res_ds2)
+res_ds2$SkinBloodAAr_sex = residuals(lmer(SkinBloodAAr_sex ~ (1|patientID) + (1|datasetID),res_ds2))
+
+lmPedBE2 = lm(PedBE ~ age + sex, res_ds2[res_ds2$tissue == "healthy",])
+res_ds2$PedBEAAr_sex = res_ds2$PedBE - predict(lmPedBE2,res_ds2)
+res_ds2$PedBEAAr_sex = residuals(lmer(PedBEAAr_sex ~ (1|patientID) + (1|datasetID),res_ds2))
+
+lmWu2 = lm(Wu ~ age + sex, res_ds2[res_ds2$tissue == "healthy",])
+res_ds2$WuAAr_sex = res_ds2$Wu - predict(lmWu2,res_ds2)
+res_ds2$WuAAr_sex = residuals(lmer(WuAAr_sex ~ (1|patientID) + (1|datasetID),res_ds2))
+
+lmZhang_BLUP2 = lm(Zhang_BLUP ~ age + sex, res_ds2[res_ds2$tissue == "healthy",])
+res_ds2$Zhang_BLUPAAr_sex = res_ds2$Zhang_BLUP - predict(lmZhang_BLUP2,res_ds2)
+res_ds2$Zhang_BLUPAAr_sex = residuals(lmer(Zhang_BLUPAAr_sex ~ (1|patientID) + (1|datasetID),res_ds2))
+
+lmZhang_EN2 = lm(Zhang_EN ~ age + sex, res_ds2[res_ds2$tissue == "healthy",])
+res_ds2$Zhang_ENAAr_sex = res_ds2$Zhang_EN - predict(lmZhang_EN2,res_ds2)
+res_ds2$Zhang_ENAAr_sex = residuals(lmer(Zhang_ENAAr_sex ~ (1|patientID) + (1|datasetID),res_ds2))
+
+lmEpiTOC2 = lm(EpiTOC ~ age + sex, res_ds2[res_ds2$tissue == "healthy",])
+res_ds2$EpiTOCAAr_sex = res_ds2$EpiTOC - predict(lmEpiTOC2,res_ds2)
+res_ds2$EpiTOCAAr_sex = residuals(lmer(EpiTOCAAr_sex ~ (1|patientID) + (1|datasetID),res_ds2))
+
+lmHypoScore2 = lm(HypoScore ~ age + sex, res_ds2[res_ds2$tissue == "healthy",])
+res_ds2$HypoScoreAAr_sex = res_ds2$HypoScore - predict(lmHypoScore2,res_ds2)
+res_ds2$HypoScoreAAr_sex = residuals(lmer(HypoScoreAAr_sex ~ (1|patientID) + (1|datasetID),res_ds2))
+
+lmMiAge2 = lm(MiAge ~ age + sex, res_ds2[res_ds2$tissue == "healthy",])
+res_ds2$MiAgeAAr_sex = res_ds2$MiAge - predict(lmMiAge2,res_ds2)
+res_ds2$MiAgeAAr_sex = residuals(lmer(MiAgeAAr_sex ~ (1|patientID) + (1|datasetID),res_ds2))
+
+
+```
+
+
+```{r}
+ds_filtered2 = cbind(ds_filtered2,res_ds2[,18:39])
+```
+
+```{r}
+
+lm2_coef = rbind(
+c(summary(lmHorvath)$coefficients[1,],summary(lmHorvath)$coefficients[2,]),
+c(summary(lmHannum)$coefficients[1,],summary(lmHannum)$coefficients[2,]),
+c(summary(lmPheno)$coefficients[1,],summary(lmPheno)$coefficients[2,]),
+c(summary(lmSkinBlood)$coefficients[1,],summary(lmSkinBlood)$coefficients[2,]),
+c(summary(lmPedBE)$coefficients[1,],summary(lmPedBE)$coefficients[2,]),
+c(summary(lmWu)$coefficients[1,],summary(lmWu)$coefficients[2,]),
+c(summary(lmZhang_BLUP)$coefficients[1,],summary(lmZhang_BLUP)$coefficients[2,]),
+c(summary(lmZhang_EN)$coefficients[1,],summary(lmZhang_EN)$coefficients[2,]),
+c(summary(lmEpiTOC)$coefficients[1,],summary(lmEpiTOC)$coefficients[2,]),
+c(summary(lmHypoScore)$coefficients[1,],summary(lmHypoScore)$coefficients[2,]),
+c(summary(lmMiAge)$coefficients[1,],summary(lmMiAge)$coefficients[2,]))
+lm2_coef = cbind(clocks,lm2_coef)
+
+
+lm2sex_coef = rbind(
+c(summary(lmHorvath2)$coefficients[1,],summary(lmHorvath2)$coefficients[2,],summary(lmHorvath2)$coefficients[3,]),
+c(summary(lmHannum2)$coefficients[1,],summary(lmHannum2)$coefficients[2,],summary(lmHannum2)$coefficients[3,]),
+c(summary(lmPheno2)$coefficients[1,],summary(lmPheno2)$coefficients[2,],summary(lmPheno2)$coefficients[3,]),
+c(summary(lmSkinBlood2)$coefficients[1,],summary(lmSkinBlood2)$coefficients[2,],summary(lmSkinBlood2)$coefficients[3,]),
+c(summary(lmPedBE2)$coefficients[1,],summary(lmPedBE2)$coefficients[2,],summary(lmPedBE2)$coefficients[3,]),
+c(summary(lmWu2)$coefficients[1,],summary(lmWu2)$coefficients[2,],summary(lmWu2)$coefficients[3,]),
+c(summary(lmZhang_BLUP2)$coefficients[1,],summary(lmZhang_BLUP2)$coefficients[2,],summary(lmZhang_BLUP2)$coefficients[3,]),
+c(summary(lmZhang_EN2)$coefficients[1,],summary(lmZhang_EN2)$coefficients[2,],summary(lmZhang_EN2)$coefficients[3,]),
+c(summary(lmEpiTOC2)$coefficients[1,],summary(lmEpiTOC2)$coefficients[2,],summary(lmEpiTOC2)$coefficients[3,]),
+c(summary(lmHypoScore2)$coefficients[1,],summary(lmHypoScore2)$coefficients[2,],summary(lmHypoScore2)$coefficients[3,]),
+c(summary(lmMiAge2)$coefficients[1,],summary(lmMiAge2)$coefficients[2,],summary(lmMiAge2)$coefficients[3,]))
+lm2sex_coef = cbind(clocks,lm2sex_coef)
+
+
+fwrite(as.data.frame(lm2_coef), "./lm2_coefficients_tnh.csv")
+fwrite(as.data.frame(lm2sex_coef), "./lm2sex_coefficients_tnh.csv")
+```
+
+
+
+Save the data:
+```{r}
+save(ds_filtered, ds_filtered2,file = "./crc_project_data.RData")
+```
